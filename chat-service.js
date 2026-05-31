@@ -742,8 +742,22 @@ const hasMobileConversationContext = (text, qualification = {}) => Boolean(
 );
 
 const isGreetingOnly = (message) => (
-  /^(hej|hejsan|hallå|tjena|god morgon|god kväll|hello|hi|hey|good morning|good evening)[!.\s]*$/i
+  /^(hej|hejsan|hallå|halla|tja|tjena|läget|laget|hej hur mår du|hej hur mar du|hallå hur mår du|halla hur mar du|hur är läget|hur ar laget|god morgon|god kväll|hello|hi|hey|good morning|good evening)[!?.\s]*$/i
     .test(String(message || '').trim())
+);
+
+const hasDirectAnswerSignal = (message) => (
+  /utan fler frågor|utan fler fragor|utan frågor|utan fragor|svara nu|svara direkt|nu direkt|bara svara|bara säg|bara sag|kort svar|no more questions|answer now|direct answer/i
+    .test(String(message || ''))
+);
+
+const hasCoverageSignal = (message) => (
+  /täckning|tackning|coverage|nät|nat|signal|karta|map|jakobsberg|barkarby/i
+    .test(String(message || ''))
+);
+
+const hasJakobsbergAreaSignal = (message) => (
+  /jakobsberg|barkarby/i.test(String(message || ''))
 );
 
 const normalizeContextualMessage = (message, messages = []) => {
@@ -822,6 +836,8 @@ const detectIntent = ({ message, messages = [], page = {}, qualification = {}, c
 
   if (hasTrustSignal(text)) return 'dealett_trust';
   if (hasFakeConditionSignal(text)) return 'fake_condition';
+  if (isGreetingOnly(text) || /vad kan du|what can you do|vem är du|who are you/i.test(text)) return 'greeting';
+  if (coverageContextActive && hasDirectAnswerSignal(text)) return 'coverage';
   if (conversationStyle?.style === 'skeptical') return 'dealett_trust';
   if (conversationStyle?.style === 'browsing') return 'browsing';
   if (
@@ -853,7 +869,6 @@ const detectIntent = ({ message, messages = [], page = {}, qualification = {}, c
     offerContextActive &&
     /vill inte|tänker inte|tanker inte|orkar inte|gissa|sluta.*frågor|dumma frågor|bara priset|slå|beat|operatör|operator|pris|price|betalar|pay|bindning|binding|surf|data|gb|kan ni|can you|säg bara|sag bara/i.test(text)
   ) return 'mobile_offer';
-  if (isGreetingOnly(text) || /vad kan du|what can you do|vem är du|who are you/i.test(text)) return 'greeting';
   if (numberOnlyPattern.test(text) && !hasQualification) return 'clarify_number';
   if (hasOutsideTopic(text) && !hasDealettTopic(text)) return 'outside_scope';
   if (/täckning|coverage|nät|map|karta|garantera.*funkar|funkar.*lägenhet|fungerar.*lägenhet/i.test(text)) return 'coverage';
@@ -1376,8 +1391,8 @@ const buildSoftGuidanceReply = ({ isEnglish, message }) => {
       en: 'Mobile and home internet are best compared separately, even if they can sometimes be bundled. What is most urgent: home internet or mobile?',
     },
     coverage_area: {
-      sv: 'I Jakobsberg/Barkarby kan täckning skilja mellan gata, hus och inomhusmiljö. Som generell vägledning är det klokt att jämföra nät snarare än bara abonnemangspris. Vi kan börja här i chatten med adress, position eller operatörsjämförelse.',
-      en: 'In the Jakobsberg/Barkarby area, coverage can differ by street, building and indoor environment. As general guidance, compare networks rather than only subscription price. We can start here in chat with address, location or operator comparison.',
+      sv: 'I Jakobsberg/Barkarby kan täckning skilja mellan gata, hus och inomhusmiljö. Som praktisk riktning skulle jag börja med Telias nät och sedan jämföra Tele2/Telenor som alternativ. Det är ingen garanti, men ett bra första spår att kontrollera.',
+      en: 'In the Jakobsberg/Barkarby area, coverage can differ by street, building and indoor environment. As practical direction, I would start with Telia’s network and then compare Tele2/Telenor as alternatives. It is not a guarantee, but it is a good first track to verify.',
     },
     coverage_indoor: {
       sv: 'Om det är dåligt hemma men funkar ute handlar det ofta om inomhustäckning, väggar eller nätet just där. Wifi-samtal kan hjälpa, men vi bör också jämföra annat nät. Vilken operatör har du idag?',
@@ -1404,6 +1419,17 @@ const buildSoftGuidanceReply = ({ isEnglish, message }) => {
 const buildStyleGuidedReply = ({ isEnglish, message, conversationStyle }) => {
   const text = String(message || '').toLowerCase();
   const style = conversationStyle?.style || 'direct_answer';
+
+  if (
+    hasCoverageSignal(text) &&
+    (hasDirectAnswerSignal(text) || hasJakobsbergAreaSignal(text) || /bäst täckning|basta tackning|bästa täckning|best coverage/i.test(text))
+  ) {
+    return buildDirectCoverageReply({
+      isEnglish,
+      message,
+      messages: [],
+    });
+  }
 
   if (style === 'skeptical') {
     return isEnglish
@@ -1438,12 +1464,12 @@ const buildStyleGuidedReply = ({ isEnglish, message, conversationStyle }) => {
     if (/täckning|tackning|coverage|telia|tele2|telenor|tre|halebop/i.test(text)) {
       if (/jakobsberg|barkarby/i.test(text)) {
         return isEnglish
-          ? 'In the Jakobsberg/Barkarby area, coverage can differ by street, building and indoor environment. As general guidance, compare networks rather than only subscription price. We can start here in chat with address, location or operator comparison.'
-          : 'I Jakobsberg/Barkarby kan täckning skilja mellan gata, hus och inomhusmiljö. Som generell vägledning är det klokt att jämföra nät snarare än bara abonnemangspris. Vi kan börja här i chatten med adress, position eller operatörsjämförelse.';
+          ? 'Direct answer: for the best chance of strong coverage around Jakobsberg/Barkarby, I would start by checking Telia’s network first, with Tele2/Telenor as alternatives. I cannot guarantee exact coverage at every address, especially indoors, but Telia’s network is the safest all-round starting point to verify.'
+          : 'Direkt svar: för bästa chans till stark täckning i Jakobsberg/Barkarby skulle jag börja med Telias nät som förstahandsval och jämföra Tele2/Telenor som alternativ. Jag kan inte garantera exakt täckning på varje adress, särskilt inomhus, men Telias nät är det säkraste allroundvalet att börja kontrollera.';
       }
       return isEnglish
-        ? 'As a practical first answer: compare by network where you actually use the phone, especially home indoors and commute. I cannot guarantee coverage, but we can start here in chat with address, location or operator comparison.'
-        : 'Praktiskt första svar: jämför efter nät där du faktiskt använder mobilen, särskilt hemma inomhus och pendling. Jag kan inte garantera täckning, men vi kan börja här i chatten med adress, position eller operatörsjämförelse.';
+        ? 'Direct answer: if coverage matters most, I would start by checking Telia’s network first, then compare Tele2/Telenor as alternatives. It is not a guarantee, because address and indoor environment can change the result a lot.'
+        : 'Direkt svar: om täckning är viktigast skulle jag börja med Telias nät först och sedan jämföra Tele2/Telenor som alternativ. Det är ingen garanti, eftersom adress och inomhusmiljö kan ändra resultatet mycket.';
     }
     return isEnglish
       ? 'A fair comparison starts with total monthly cost, data need and binding time. I can give a rough direction first, but exact recommendation needs real terms. What are you comparing: operators, price or coverage?'
@@ -1485,12 +1511,26 @@ const wantsFullCoverageMap = (message) => (
     .test(String(message || ''))
 );
 
-const fallbackReply = ({ intent, language, message, qualification, toolResult, conversationStyle }) => {
+const buildDirectCoverageReply = ({ isEnglish, message, messages = [] }) => {
+  const coverageContext = getRecentConversationText(message, messages);
+  const currentMessageHasCoverageSignal = hasCoverageSignal(message);
+  if (hasJakobsbergAreaSignal(coverageContext) && currentMessageHasCoverageSignal) {
+    return isEnglish
+      ? 'Direct answer: for the best chance of strong coverage around Jakobsberg/Barkarby, I would start by checking Telia’s network first, with Tele2/Telenor as alternatives. I cannot guarantee exact coverage at every address, especially indoors, but Telia’s network is the safest all-round starting point to verify.'
+      : 'Direkt svar: för bästa chans till stark täckning i Jakobsberg/Barkarby skulle jag börja med Telias nät som förstahandsval och jämföra Tele2/Telenor som alternativ. Jag kan inte garantera exakt täckning på varje adress, särskilt inomhus, men Telias nät är det säkraste allroundvalet att börja kontrollera.';
+  }
+
+  return isEnglish
+    ? 'Short answer: start with Telia’s network for the best chance of coverage, but verify the address because indoor environment can differ a lot.'
+    : 'Om jag ska svara kort: börja med Telias nät för bästa chans till täckning, men kontrollera adressen eftersom inomhusmiljö kan skilja mycket.';
+};
+
+const fallbackReply = ({ intent, language, message, messages = [], qualification, toolResult, conversationStyle }) => {
   const isEnglish = language === 'en';
   if (intent === 'greeting') {
     return isEnglish
       ? 'Hi! I can help with new offers, existing subscriptions, invoices, coverage, broadband, gift cards, and the cart. What do you need help with?'
-      : 'Hej! Jag kan hjälpa med nya erbjudanden, befintliga abonnemang, faktura, täckning, bredband, presentkort och varukorg. Vad vill du ha hjälp med?';
+      : 'Hej! Jag kan hjälpa dig jämföra mobilabonnemang, bredband, täckning och presentkort. Vad vill du börja med?';
   }
   if (intent === 'outside_scope') {
     return isEnglish
@@ -1664,6 +1704,13 @@ const fallbackReply = ({ intent, language, message, qualification, toolResult, c
       : 'För 5G-bredband är nästa steg att skriva adress eller öppna täckningskartan. Jag kan visa erbjudanden, men exakt tillgänglighet måste kontrolleras med adress.';
   }
   if (intent === 'coverage') {
+    if (hasDirectAnswerSignal(message)) {
+      return buildDirectCoverageReply({
+        isEnglish,
+        message,
+        messages,
+      });
+    }
     if (wantsFullCoverageMap(message)) {
       return isEnglish
         ? 'Yes, if you want a large map view, the full coverage map page can be useful. We can still start here in chat with address, location or operator comparison first.'
@@ -1767,7 +1814,7 @@ const buildPrompt = ({ language, intent, message, messages, qualification, toolR
 ].join('\n');
 
 const shouldUseDeterministicReply = ({ intent, toolResult }) => {
-  if (['outside_scope', 'offer_discovery', 'browsing', 'not_interested', 'clarify_number', 'dealett_trust', 'fake_condition', 'soft_guidance', 'style_guided', 'cheapest_start', 'unknown_customer'].includes(intent)) return true;
+  if (['greeting', 'outside_scope', 'offer_discovery', 'browsing', 'not_interested', 'clarify_number', 'dealett_trust', 'fake_condition', 'soft_guidance', 'style_guided', 'cheapest_start', 'unknown_customer'].includes(intent)) return true;
   return [
     'market_intelligence',
     'qualification',
@@ -1785,10 +1832,6 @@ const getRecentConversationText = (message, messages = []) => [
   message,
 ].join(' ').toLowerCase();
 
-const hasUncertaintySignal = (text) => (
-  /tror|kanske|typ|runt|vet inte|ingen aning|osäker|osaker|maybe|not sure|roughly|around/i.test(String(text || ''))
-);
-
 const hasSkepticalContext = (text) => (
   /får ni betalt|far ni betalt|säljare|saljare|bara sälja|bara salja|lita på|lita pa|oberoende|partisk|reklam.*sälj|reklam.*salj/i.test(String(text || ''))
 );
@@ -1796,6 +1839,23 @@ const hasSkepticalContext = (text) => (
 const hasRewardContext = (text) => (
   /presentkort|belöning|beloning|bonus|reward|gift card/i.test(String(text || ''))
 );
+
+const hasCurrentRewardSignal = (text) => (
+  /presentkort|belöning|beloning|bonus|reward|gift card|högsta presentkort|hogsta presentkort|största presentkort|storsta presentkort|mest tillbaka/i
+    .test(String(text || ''))
+);
+
+const hasCurrentApproximateFactualInput = (text) => {
+  const normalized = String(text || '').toLowerCase();
+  const factualUnit = '(?:kr|sek|kronor|spänn|spann|gb|g|person|personer|abonnemang|mån|månad|månader|manader|month|months)?';
+  const approximateWords = '(?:typ|runt|cirka|ca|ungefär|ungefar|kanske|maybe|around|roughly|approximately)';
+  const numberPattern = `(?:\\d{1,4}|${numberWordPattern})`;
+
+  return new RegExp(`\\b${approximateWords}\\s*${numberPattern}\\s*${factualUnit}\\b`, 'i').test(normalized) ||
+    new RegExp(`\\b${numberPattern}\\s*${factualUnit}\\s*${approximateWords}\\b`, 'i').test(normalized) ||
+    /\btror\s+(jag|vi)\s+betalar\b/i.test(normalized) ||
+    /\btror\s+(jag|vi)\s+(har|använder|anvander|är|ar)\s+.*\d/i.test(normalized);
+};
 
 const hasBrowsingContext = (text) => (
   /kika|tittar runt|testa chatten|såg.*reklam|sag.*reklam|bara kollar|nyfiken/i.test(String(text || ''))
@@ -1871,7 +1931,7 @@ const softenStrictQualification = (reply, recentText, isEnglish = false) => {
   return nextReply;
 };
 
-const addContextMarkers = ({ reply, recentText, intent, isEnglish = false }) => {
+const addContextMarkers = ({ reply, recentText, currentMessage, intent, isEnglish = false }) => {
   let nextReply = String(reply || '');
   if (!nextReply) return nextReply;
 
@@ -1879,7 +1939,7 @@ const addContextMarkers = ({ reply, recentText, intent, isEnglish = false }) => 
     nextReply = isEnglish
       ? `Without pushing a sale: ${nextReply}`
       : `Utan att pressa fram ett byte: ${nextReply}`;
-  } else if (hasRewardContext(recentText) && !/presentkort|belöning|beloning|bonus|totalvärde|totalvarde/i.test(nextReply)) {
+  } else if (hasCurrentRewardSignal(currentMessage) && !/presentkort|belöning|beloning|bonus|totalvärde|totalvarde/i.test(nextReply)) {
     nextReply = isEnglish
       ? `So the reward does not become a bad total deal: ${nextReply}`
       : `För att presentkortet inte ska bli en dålig totalaffär: ${nextReply}`;
@@ -1894,7 +1954,7 @@ const addContextMarkers = ({ reply, recentText, intent, isEnglish = false }) => 
   }
 
   if (
-    hasUncertaintySignal(recentText) &&
+    hasCurrentApproximateFactualInput(currentMessage) &&
     !hasUncertaintyMarker(nextReply) &&
     !['dealett_trust', 'fake_condition'].includes(intent)
   ) {
@@ -1915,6 +1975,49 @@ const addContextMarkers = ({ reply, recentText, intent, isEnglish = false }) => 
   return nextReply;
 };
 
+const stripPrefixPatterns = (reply, patterns = []) => patterns.reduce((nextReply, pattern) => (
+  String(nextReply || '').replace(pattern, '').trimStart()
+), String(reply || ''));
+
+const sanitizeLeakedContextPrefixes = ({ reply, message }) => {
+  let nextReply = String(reply || '').trim();
+  if (!nextReply) return nextReply;
+
+  const greeting = isGreetingOnly(message);
+  const allowRewardPrefix = !greeting && hasCurrentRewardSignal(message);
+  const allowApproximatePrefix = !greeting && hasCurrentApproximateFactualInput(message);
+  const rewardPrefixPatterns = [
+    /^För att presentkortet inte ska bli en dålig totalaffär:\s*/i,
+    /^So the reward does not become a bad total deal:\s*/i,
+  ];
+  const approximatePrefixPatterns = [
+    /^Jag tar det som ungefärligt:\s*/i,
+    /^Ungefär räcker här:\s*/i,
+    /^Ungefär räcker:\s*/i,
+    /^Treating this as approximate:\s*/i,
+    /^Roughly is enough here:\s*/i,
+    /^Roughly is enough:\s*/i,
+  ];
+  const greetingOnlyPrefixPatterns = [
+    /^Utan att pressa fram ett byte:\s*/i,
+    /^Without pushing a sale:\s*/i,
+    /^Ingen press medan du kikar:\s*/i,
+    /^No pressure while you browse:\s*/i,
+    /^Jag förstår, vi håller det enkelt:\s*/i,
+    /^I understand, we can keep it simple:\s*/i,
+  ];
+
+  for (let index = 0; index < 4; index += 1) {
+    const before = nextReply;
+    if (!allowRewardPrefix) nextReply = stripPrefixPatterns(nextReply, rewardPrefixPatterns);
+    if (!allowApproximatePrefix) nextReply = stripPrefixPatterns(nextReply, approximatePrefixPatterns);
+    if (greeting) nextReply = stripPrefixPatterns(nextReply, greetingOnlyPrefixPatterns);
+    if (nextReply === before) break;
+  }
+
+  return nextReply.trim();
+};
+
 const polishReplyForConversation = ({ reply, message, messages = [], language, intent }) => {
   const isEnglish = language === 'en';
   const recentText = getRecentConversationText(message, messages);
@@ -1931,8 +2034,14 @@ const polishReplyForConversation = ({ reply, message, messages = [], language, i
   nextReply = addContextMarkers({
     reply: nextReply,
     recentText,
+    currentMessage: message,
     intent,
     isEnglish,
+  });
+
+  nextReply = sanitizeLeakedContextPrefixes({
+    reply: nextReply,
+    message,
   });
 
   return nextReply.slice(0, 1400);

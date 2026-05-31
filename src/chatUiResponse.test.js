@@ -269,15 +269,33 @@ const postChat = async (baseUrl, payload) => {
   const baseUrl = `http://${HOST}:${port}`;
 
   try {
+    const stalePrefixHistory = [
+      { role: 'user', content: 'jag vill ha högsta presentkortet' },
+      { role: 'assistant', content: 'För att presentkortet inte ska bli en dålig totalaffär: vi jämför totalvärdet.' },
+      { role: 'user', content: 'typ 300 kr' },
+      { role: 'assistant', content: 'Jag tar det som ungefärligt: vilken operatör har du idag?' },
+    ];
+    const assertNoLeakedAdvisoryPrefix = (body) => {
+      assert.doesNotMatch(body.reply, /För att presentkortet inte ska bli en dålig totalaffär/i);
+      assert.doesNotMatch(body.reply, /Jag tar det som ungefärligt/i);
+      assert.doesNotMatch(body.reply, /Ungefär räcker här/i);
+    };
+
     const greeting = await postChat(baseUrl, {
       message: 'hej',
       language: 'sv',
-      messages: [],
+      messages: stalePrefixHistory,
       qualification: {},
       cart: [],
       page: {},
     });
     assert.equal(greeting.message, greeting.reply);
+    assert.equal(
+      greeting.reply,
+      'Hej! Jag kan hjälpa dig jämföra mobilabonnemang, bredband, täckning och presentkort. Vad vill du börja med?'
+    );
+    assertNoLeakedAdvisoryPrefix(greeting);
+    assert.doesNotMatch(greeting.reply, /befintliga abonnemang|faktura|varukorg/i);
     assert.deepEqual(greeting.quickReplies.map((reply) => reply.label), [
       'Mobilabonnemang',
       'Bredband hemma',
@@ -296,6 +314,7 @@ const postChat = async (baseUrl, payload) => {
       page: {},
     });
     assert.equal(coverage.embeddedWidget?.type, 'coverage_selector');
+    assertNoLeakedAdvisoryPrefix(coverage);
     assert.deepEqual(coverage.embeddedWidget.actions.map((action) => action.id), [
       'use_location',
       'enter_address',
@@ -309,25 +328,104 @@ const postChat = async (baseUrl, payload) => {
     const vagueArea = await postChat(baseUrl, {
       message: 'jag bor i jakobsberg och vill ha bäst täckning',
       language: 'sv',
-      messages: [],
+      messages: stalePrefixHistory,
       qualification: {},
       cart: [],
       page: {},
     });
     assert.equal(vagueArea.embeddedWidget?.type, 'coverage_selector');
-    assert.match(vagueArea.reply, /Jakobsberg|gata|hus|inomhusmiljö|jämföra nät|här i chatten/i);
+    assertNoLeakedAdvisoryPrefix(vagueArea);
+    assert.match(vagueArea.reply, /Jakobsberg|Telias nät|Tele2\/Telenor|inte.*garanter|inomhus/i);
     assert.doesNotMatch(vagueArea.reply, /öppna täckningskartan/i);
 
-    const fullMap = await postChat(baseUrl, {
-      message: 'visa full täckningskarta',
+    const bestCoverageArea = await postChat(baseUrl, {
+      message: 'bäst täckning i jakobsberg',
       language: 'sv',
       messages: [],
       qualification: {},
       cart: [],
       page: {},
     });
+    assert.equal(bestCoverageArea.embeddedWidget?.type, 'coverage_selector');
+    assert.deepEqual(bestCoverageArea.quickReplies, []);
+    assert.match(bestCoverageArea.reply, /Direkt svar|Telias nät|Tele2\/Telenor|inte.*garanter|ingen garanti/i);
+    assert.doesNotMatch(bestCoverageArea.reply, /definitivt bäst|garanterad täckning|100\s*%|exakt signal/i);
+
+    const directBestCoverage = await postChat(baseUrl, {
+      message: 'jag vill ha bästa täckning i jakobsberg utan fler frågor, svara nu direkt',
+      language: 'sv',
+      messages: [],
+      qualification: {},
+      cart: [],
+      page: {},
+    });
+    assert.equal(directBestCoverage.embeddedWidget?.type, 'coverage_selector');
+    assert.deepEqual(directBestCoverage.quickReplies, []);
+    assert.match(directBestCoverage.reply, /^Direkt svar:/);
+    assert.match(directBestCoverage.reply, /Telias nät|förstahandsval|Tele2\/Telenor/i);
+    assert.doesNotMatch(directBestCoverage.reply, /\?/);
+    assert.doesNotMatch(directBestCoverage.reply, /definitivt bäst|garanterad täckning|100\s*%|exakt signal/i);
+
+    const shortCoverageFollowup = await postChat(baseUrl, {
+      message: 'bara svara något',
+      language: 'sv',
+      messages: [
+        { role: 'user', content: 'jag vill ha bäst täckning i jakobsberg' },
+        { role: 'assistant', content: bestCoverageArea.reply },
+      ],
+      qualification: {},
+      cart: [],
+      page: {},
+    });
+    assert.equal(shortCoverageFollowup.intent, 'coverage');
+    assert.equal(shortCoverageFollowup.embeddedWidget?.type, 'coverage_selector');
+    assert.deepEqual(shortCoverageFollowup.quickReplies, []);
+    assert.match(shortCoverageFollowup.reply, /Telias nät|bästa chans till täckning|kontrollera adressen|inomhusmiljö/i);
+    assert.doesNotMatch(shortCoverageFollowup.reply, /\?/);
+    assert.doesNotMatch(shortCoverageFollowup.reply, /Mobilabonnemang|Bredband hemma|Presentkort/);
+
+    const fullMap = await postChat(baseUrl, {
+      message: 'visa full täckningskarta',
+      language: 'sv',
+      messages: stalePrefixHistory,
+      qualification: {},
+      cart: [],
+      page: {},
+    });
     assert.equal(fullMap.embeddedWidget?.type, 'coverage_selector');
+    assertNoLeakedAdvisoryPrefix(fullMap);
     assert.match(fullMap.reply, /stor kartvy|hela täckningskartan|full/i);
+
+    const coverageCheck = await postChat(baseUrl, {
+      message: 'jag vill kolla täckning',
+      language: 'sv',
+      messages: stalePrefixHistory,
+      qualification: {},
+      cart: [],
+      page: {},
+    });
+    assert.equal(coverageCheck.embeddedWidget?.type, 'coverage_selector');
+    assertNoLeakedAdvisoryPrefix(coverageCheck);
+
+    const rewardIntent = await postChat(baseUrl, {
+      message: 'jag vill ha högsta presentkortet',
+      language: 'sv',
+      messages: [],
+      qualification: {},
+      cart: [],
+      page: {},
+    });
+    assert.match(rewardIntent.reply, /presentkort|belöning|totalvärde|totalaffär/i);
+
+    const approximateInput = await postChat(baseUrl, {
+      message: 'typ 300 kr',
+      language: 'sv',
+      messages: [],
+      qualification: {},
+      cart: [],
+      page: {},
+    });
+    assert.match(approximateInput.reply, /ungefär|ungefärligt|Runt/i);
 
     const validOffer = await postChat(baseUrl, {
       message: 'Jag har Tele2, 20 GB, ingen bindningstid och betalar 399 kr.',
