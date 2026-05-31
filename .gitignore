@@ -6,3 +6,4 @@ node_modules/
 *.log
 coverage/
 dist/
+data/chat-feedback/*.jsonl

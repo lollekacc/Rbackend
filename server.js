@@ -32,6 +32,7 @@ const {
   getPlans,
 } = require('./offer-service');
 const { createChatCompletion, loadChatRules, normalizeQualification } = require('./chat-service');
+const { appendChatFeedback } = require('./chat-feedback-service');
 
 const ROOT = path.resolve(__dirname, '..', 'Rdealett');
 const PORT = Number(process.env.PORT) || 3000;
@@ -159,6 +160,13 @@ const handleApi = async (request, response, requestUrl) => {
       if (!requireMethod(request, response, 'POST')) return true;
       const body = await readJsonBody(request);
       sendJson(response, 200, await createChatCompletion(body));
+      return true;
+    }
+
+    if (pathname === '/api/chat-feedback') {
+      if (!requireMethod(request, response, 'POST')) return true;
+      const body = await readJsonBody(request);
+      sendJson(response, 200, appendChatFeedback(body));
       return true;
     }
 

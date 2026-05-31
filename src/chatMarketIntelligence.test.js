@@ -219,8 +219,8 @@ const countQuestions = (text) => (String(text || '').match(/\?/g) || []).length;
       cart: [],
       page: {},
     });
-    assert.equal(unknownCustomer.intent, 'unknown_customer');
-    assert.match(unknownCustomer.reply, /behöver.*riktiga uppgifter|exakt rekommendation/i);
+    assert.ok(['unknown_customer', 'soft_guidance'].includes(unknownCustomer.intent));
+    assert.match(unknownCustomer.reply, /riktiga uppgifter|exakt rekommendation|ungefär|under 200|200-350|över 350/i);
     assert.ok(countQuestions(unknownCustomer.reply) <= 1);
 
     const employerPaid = await postChat(baseUrl, {

@@ -1,0 +1,111 @@
+{
+  "timestamp": "2026-05-31T18:52:04.743Z",
+  "apiUrl": "http://localhost:3000/api/chat",
+  "scenarioName": "Multi turn preserve direct",
+  "expectedStyle": "direct_answer",
+  "sessionId": "2026-05-31T18-52-04-620Z-style-multi-turn-preserve-direct",
+  "transcript": [
+    {
+      "turn": 1,
+      "userMessage": "välj något åt mig utan frågor",
+      "botReply": "Om jag måste välja utan mer info: börja med ett mellanstort 5G-abonnemang runt 20-30 GB. Det är ett tryggt allroundval för många utan att bli lika dyrt som obegränsat. Det är en kvalificerad gissning, inte en exakt personlig rekommendation. Vill du att jag gissar vidare eller gör det träffsäkert med en fråga?",
+      "response": {
+        "intent": "style_guided",
+        "qualification": {
+          "peopleCount": null,
+          "operators": [],
+          "bindingEnds": [],
+          "mobileUsage": null,
+          "priceRange": null,
+          "exactMonthlyPrice": null,
+          "exactMonthlyPrices": [],
+          "customerSegment": null,
+          "familyTotalPrice": null,
+          "operatorAppliesToAll": false,
+          "bindingAppliesToAll": false,
+          "priceAppliesToAll": false,
+          "readyForOffer": false,
+          "missingFields": [
+            "peopleCount",
+            "operators",
+            "bindingEnds",
+            "mobileUsage",
+            "priceRange"
+          ]
+        },
+        "conversationStyle": {
+          "style": "direct_answer",
+          "confidence": 0.95,
+          "reasons": [
+            "välj.*(abonnemang|något|nåt|plan|bredband|mobil)|valj.*(abonnemang|nagot|nat|plan|bredband|mobil)",
+            "välj något åt mig|valj nagot at mig|pick.*for me"
+          ],
+          "responsePolicy": {
+            "answerFirst": true,
+            "maxQuestions": 1,
+            "allowReasonableGuess": true,
+            "requireDisclaimer": true,
+            "preserveSalesFlow": true
+          }
+        },
+        "marketClassification": null,
+        "offerCalculation": {
+          "readyForOffer": false
+        }
+      }
+    },
+    {
+      "turn": 2,
+      "userMessage": "okej gissa vidare",
+      "botReply": "Om jag måste välja utan mer info: börja med ett mellanstort 5G-abonnemang runt 20-30 GB. Det är ett tryggt allroundval för många utan att bli lika dyrt som obegränsat. Det är en kvalificerad gissning, inte en exakt personlig rekommendation. Vill du att jag gissar vidare eller gör det träffsäkert med en fråga?",
+      "response": {
+        "intent": "style_guided",
+        "qualification": {
+          "peopleCount": null,
+          "operators": [],
+          "bindingEnds": [],
+          "mobileUsage": null,
+          "priceRange": null,
+          "exactMonthlyPrice": null,
+          "exactMonthlyPrices": [],
+          "customerSegment": null,
+          "familyTotalPrice": null,
+          "operatorAppliesToAll": false,
+          "bindingAppliesToAll": false,
+          "priceAppliesToAll": false,
+          "readyForOffer": false,
+          "missingFields": [
+            "peopleCount",
+            "operators",
+            "bindingEnds",
+            "mobileUsage",
+            "priceRange"
+          ]
+        },
+        "conversationStyle": {
+          "style": "human_test",
+          "confidence": 0.75,
+          "reasons": [
+            "du får bestämma|du far bestamma|gissa|imponera på mig|imponera pa mig"
+          ],
+          "responsePolicy": {
+            "answerFirst": true,
+            "maxQuestions": 1,
+            "allowReasonableGuess": true,
+            "requireDisclaimer": true,
+            "preserveSalesFlow": false
+          }
+        },
+        "marketClassification": null,
+        "offerCalculation": {
+          "readyForOffer": false
+        }
+      }
+    }
+  ],
+  "evaluation": {
+    "score": 5,
+    "issues": [],
+    "recommendedFixes": []
+  }
+}

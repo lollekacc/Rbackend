@@ -1,0 +1,160 @@
+{
+  "timestamp": "2026-05-31T19:00:50.911Z",
+  "apiUrl": "http://localhost:3000/api/chat",
+  "scenario": {
+    "id": 82,
+    "name": "082 lazy / best_gift_card / 5 turns",
+    "persona": "lazy",
+    "situation": "best_gift_card",
+    "length": 5
+  },
+  "sessionId": "2026-05-31T18-59-47-929Z-gauntlet-82",
+  "transcript": [
+    {
+      "turn": 1,
+      "userMessage": "välj nåt åt mig bara",
+      "botReply": "Om jag måste välja utan mer info: börja med ett mellanstort 5G-abonnemang runt 20-30 GB. Det är ett tryggt allroundval för många utan att bli lika dyrt som obegränsat. Det är en kvalificerad gissning, inte en exakt personlig rekommendation. Vill du att jag gissar vidare eller gör det träffsäkert med en fråga?",
+      "signals": {
+        "intent": "style_guided",
+        "conversationStyle": {
+          "style": "direct_answer",
+          "confidence": 0.75,
+          "reasons": [
+            "välj.*(abonnemang|något|nåt|plan|bredband|mobil)|valj.*(abonnemang|nagot|nat|plan|bredband|mobil)"
+          ],
+          "responsePolicy": {
+            "answerFirst": true,
+            "maxQuestions": 1,
+            "allowReasonableGuess": true,
+            "requireDisclaimer": true,
+            "preserveSalesFlow": true
+          }
+        },
+        "marketClassification": null,
+        "offerCalculation": {
+          "readyForOffer": false
+        }
+      }
+    },
+    {
+      "turn": 2,
+      "userMessage": "streamar ibland",
+      "botReply": "Hur många abonnemang vill du ha?",
+      "signals": {
+        "intent": "mobile_offer",
+        "conversationStyle": {
+          "style": "advisor",
+          "confidence": 0.45,
+          "reasons": [
+            "telecom_context_without_specific_style"
+          ],
+          "responsePolicy": {
+            "answerFirst": false,
+            "maxQuestions": 2,
+            "allowReasonableGuess": false,
+            "requireDisclaimer": false,
+            "preserveSalesFlow": true
+          }
+        },
+        "marketClassification": null,
+        "offerCalculation": {
+          "readyForOffer": false
+        }
+      }
+    },
+    {
+      "turn": 3,
+      "userMessage": "vet inte exakt, kanske 2",
+      "botReply": "Ingen fara. Vi börjar enkelt: gäller det ett abonnemang eller flera?",
+      "signals": {
+        "intent": "mobile_offer",
+        "conversationStyle": {
+          "style": "advisor",
+          "confidence": 0.45,
+          "reasons": [
+            "telecom_context_without_specific_style"
+          ],
+          "responsePolicy": {
+            "answerFirst": false,
+            "maxQuestions": 2,
+            "allowReasonableGuess": false,
+            "requireDisclaimer": false,
+            "preserveSalesFlow": true
+          }
+        },
+        "marketClassification": null,
+        "offerCalculation": {
+          "readyForOffer": false
+        }
+      }
+    },
+    {
+      "turn": 4,
+      "userMessage": "skit i surf bara bonus",
+      "botReply": "Hur många abonnemang vill du ha?",
+      "signals": {
+        "intent": "mobile_offer",
+        "conversationStyle": {
+          "style": "advisor",
+          "confidence": 0.45,
+          "reasons": [
+            "telecom_context_without_specific_style"
+          ],
+          "responsePolicy": {
+            "answerFirst": false,
+            "maxQuestions": 2,
+            "allowReasonableGuess": false,
+            "requireDisclaimer": false,
+            "preserveSalesFlow": true
+          }
+        },
+        "marketClassification": null,
+        "offerCalculation": {
+          "readyForOffer": false
+        }
+      }
+    },
+    {
+      "turn": 5,
+      "userMessage": "1 typ",
+      "botReply": "Hur många abonnemang vill du ha?",
+      "signals": {
+        "intent": "mobile_offer",
+        "conversationStyle": {
+          "style": "advisor",
+          "confidence": 0.45,
+          "reasons": [
+            "telecom_context_without_specific_style"
+          ],
+          "responsePolicy": {
+            "answerFirst": false,
+            "maxQuestions": 2,
+            "allowReasonableGuess": false,
+            "requireDisclaimer": false,
+            "preserveSalesFlow": true
+          }
+        },
+        "marketClassification": null,
+        "offerCalculation": {
+          "readyForOffer": false
+        }
+      }
+    }
+  ],
+  "evaluation": {
+    "technical": 3.6,
+    "human": 5,
+    "trust": 4.2,
+    "sales": 5,
+    "finalScore": 4.5,
+    "flags": [
+      "ignored_uncertainty",
+      "repetitive"
+    ],
+    "successes": [
+      "handled_uncertainty",
+      "handled_emotion",
+      "safe_direct_guess"
+    ]
+  }
+}

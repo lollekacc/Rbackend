@@ -4,6 +4,7 @@ const path = require('node:path');
 const { calculateOfferOptions } = require('./offer-calculator');
 const { getBroadbandPlans, getPlans } = require('./offer-service');
 const { classifyCustomerClaim } = require('./src/marketIntelligence');
+const { detectConversationStyle } = require('./src/conversationStyle');
 
 const OPENAI_ENDPOINT = 'https://api.openai.com/v1/responses';
 const DEFAULT_MODEL = 'gpt-4o-mini';
@@ -751,7 +752,8 @@ const normalizeContextualMessage = (message, messages = []) => {
     .reverse()
     .find((item) => item.role === 'user')?.content || '';
 
-  const numberMatch = normalized.match(numberOnlyPattern);
+  const approximateNumberMatch = normalized.match(new RegExp(`^(\\d+|${numberWordPattern})\\s*(typ|kanske|maybe|ungefär|ungefar)?$`, 'i'));
+  const numberMatch = normalized.match(numberOnlyPattern) || approximateNumberMatch;
   if (numberMatch) {
     const parsedNumber = parseNumberValue(numberMatch[1]);
     if (/hur många abonnemang|one subscription|several subscriptions|gäller det ett abonnemang eller flera|is it one subscription or several/i.test(previousAssistant)) {
@@ -785,7 +787,7 @@ const normalizeContextualMessage = (message, messages = []) => {
   return latest;
 };
 
-const detectIntent = ({ message, messages = [], page = {}, qualification = {} }) => {
+const detectIntent = ({ message, messages = [], page = {}, qualification = {}, conversationStyle = null }) => {
   const text = normalizeCommonTypos(message).toLowerCase();
   const pagePath = String(page?.path || '');
   const recentUserConversation = trimMessages(messages)
@@ -814,7 +816,30 @@ const detectIntent = ({ message, messages = [], page = {}, qualification = {} })
 
   if (hasTrustSignal(text)) return 'dealett_trust';
   if (hasFakeConditionSignal(text)) return 'fake_condition';
-  if (getSoftGuidanceType(text)) return 'soft_guidance';
+  if (conversationStyle?.style === 'skeptical') return 'dealett_trust';
+  if (conversationStyle?.style === 'browsing') return 'browsing';
+  if (
+    conversationStyle?.style === 'reward_focused' &&
+    /högsta|hogsta|mest|största|storsta|bara/i.test(text)
+  ) return 'style_guided';
+  if (
+    conversationStyle?.style === 'comparison' &&
+    !/(\d{2,4})\s*(kr|sek|kronor|spänn|spann)|kampanj|campaign|bindning|binding/i.test(text)
+  ) return 'style_guided';
+  if (conversationStyle?.style === 'confused') return 'style_guided';
+  if (
+    conversationStyle?.style === 'complaint_or_problem' &&
+    !/(\d{2,4})\s*(kr|sek|kronor|spänn|spann)|kampanj|campaign|bindning|binding/i.test(text)
+  ) return 'style_guided';
+  if (
+    ['direct_answer', 'impatient', 'human_test'].includes(conversationStyle?.style) &&
+    !/(\d{2,4})\s*(kr|sek|kronor|spänn|spann)|obegränsad|obegransad|unlimited|kampanj|campaign|bindning|binding/i.test(text)
+  ) return 'style_guided';
+  const softGuidanceType = getSoftGuidanceType(text);
+  if (
+    softGuidanceType &&
+    !(softGuidanceType === 'approximate_price' && (Number(qualification.peopleCount) > 1 || /totalt|sammanlagt|tillsammans|familj|family/i.test(text)))
+  ) return 'soft_guidance';
   if (/vet inte vad jag har|vet inte operatör|vet inte operator|vet inte pris|ingen aning.*pris|bara säg vad som är bäst|bara sag vad som ar bast/i.test(text)) return 'unknown_customer';
   if (/jobbet betalar|arbetsgivare|employer.*pay|work pays|company pays/i.test(text)) return 'mobile_offer';
   if (hasCheapestOnlyIntent(text) && !hasMobileConversationContext(fullUserContext, qualification)) return 'cheapest_start';
@@ -1370,7 +1395,81 @@ const buildSoftGuidanceReply = ({ isEnglish, message }) => {
   return isEnglish ? selected.en : selected.sv;
 };
 
-const fallbackReply = ({ intent, language, message, qualification, toolResult }) => {
+const buildStyleGuidedReply = ({ isEnglish, message, conversationStyle }) => {
+  const text = String(message || '').toLowerCase();
+  const style = conversationStyle?.style || 'direct_answer';
+
+  if (style === 'skeptical') {
+    return isEnglish
+      ? 'Yes, Dealett may earn compensation from partners if you choose an offer. But the assistant should still tell you when your current deal looks better or when switching is not worth it, otherwise the advice is not useful.'
+      : 'Ja, Dealett kan få ersättning från partners om du väljer ett erbjudande. Men assistenten ska ändå säga när ditt nuvarande avtal verkar bättre eller när ett byte inte är värt det, annars är rådgivningen inte användbar.';
+  }
+
+  if (style === 'browsing') {
+    return isEnglish
+      ? 'Welcome. Dealett helps you see whether your current subscription can actually be beaten after price, coverage, binding time and any reward. You can just browse; I start comparing only when you want.'
+      : 'Välkommen. Dealett hjälper dig se om ditt nuvarande abonnemang faktiskt går att slå efter pris, täckning, bindningstid och eventuell belöning. Du kan bara kika runt, jag börjar jämföra först när du vill.';
+  }
+
+  if (style === 'confused') {
+    if (/faktura|invoice|bill/i.test(text)) {
+      return isEnglish
+        ? 'Invoices can be confusing. Start with the total monthly amount and how many users or services are included, then we can separate subscriptions, add-ons and one-time fees.'
+        : 'Fakturor kan vara röriga. Börja med totalbeloppet per månad och hur många användare eller tjänster som ingår, så kan vi skilja abonnemang, tillval och engångskostnader.';
+    }
+    return isEnglish
+      ? 'I am not completely sure what you mean. If you are just looking around, I can briefly explain Dealett, or you can write "mobile", "broadband" or "coverage".'
+      : 'Jag är inte helt säker på vad du menar. Om du bara kikar kan jag kort förklara vad Dealett gör, eller så kan du skriva "mobil", "bredband" eller "täckning".';
+  }
+
+  if (style === 'impatient') {
+    return isEnglish
+      ? 'Short answer: start with coverage and stability, then price. If I must guess, a mid-sized 5G mobile plan around 20-30 GB is a safe all-round start, but not an exact recommendation. Mobile or broadband?'
+      : 'Kort svar: börja med täckning och stabilitet, sedan pris. Om jag måste gissa är ett mellanstort 5G-abonnemang runt 20-30 GB en trygg allroundstart, men inte en exakt rekommendation. Mobilabonnemang eller bredband?';
+  }
+
+  if (style === 'comparison') {
+    if (/täckning|tackning|coverage|telia|tele2|telenor|tre|halebop/i.test(text)) {
+      return isEnglish
+        ? 'As a practical first answer: compare by network where you actually use the phone, especially home indoors and commute. I cannot guarantee coverage from chat, but address-level coverage should decide before price. Which area matters most?'
+        : 'Praktiskt första svar: jämför efter nät där du faktiskt använder mobilen, särskilt hemma inomhus och pendling. Jag kan inte garantera täckning i chatten, men adressnivå bör avgöra före pris. Vilket område är viktigast?';
+    }
+    return isEnglish
+      ? 'A fair comparison starts with total monthly cost, data need and binding time. I can give a rough direction first, but exact recommendation needs real terms. What are you comparing: operators, price or coverage?'
+      : 'En rättvis jämförelse börjar med total månadskostnad, surfbehov och bindningstid. Jag kan ge en grov riktning först, men exakt rekommendation kräver riktiga villkor. Vad jämför du: operatörer, pris eller täckning?';
+  }
+
+  if (style === 'complaint_or_problem') {
+    return isEnglish
+      ? 'As a first assessment, not an exact recommendation: if the current service is bad, I would not start with price. First check whether the problem is coverage, indoor signal, router/device or billing. What is the main problem: coverage, speed or cost?'
+      : 'Som första bedömning, inte en exakt rekommendation: om nuvarande tjänst strular skulle jag inte börja med priset. Först kollar vi om problemet är täckning, inomhussignal, router/enhet eller faktura. Vad är huvudproblemet: täckning, hastighet eller kostnad?';
+  }
+
+  if (style === 'reward_focused') {
+    return isEnglish
+      ? 'I can show the highest reward, but I should not choose a subscription only by gift card. An expensive plan with a large reward can be worse in total. Do you want highest reward or best total value?'
+      : 'Jag kan visa högsta belöningen, men jag bör inte välja abonnemang bara efter presentkort. Ett dyrt abonnemang med stor belöning kan bli sämre totalt. Vill du se högsta belöning eller bästa totalvärde?';
+  }
+
+  const broadbandContext = /bredband|internet hemma|router|fiber|5g[-\s]?bredband/i.test(text);
+  const coverageContext = /täckning|tackning|coverage|funkar|stabil/i.test(text);
+  if (broadbandContext) {
+    return isEnglish
+      ? 'If I must choose without more information: start with an address-checked 5G broadband option only if the coverage map looks strong at home. That is a qualified guess, not an exact recommendation. Do you want me to keep guessing or make it accurate with one detail?'
+      : 'Om jag måste välja utan mer info: börja med ett adresskontrollerat 5G-bredband bara om täckningskartan ser stark ut hemma. Det är en kvalificerad gissning, inte en exakt rekommendation. Vill du att jag gissar vidare eller gör det träffsäkert med en uppgift?';
+  }
+  if (coverageContext) {
+    return isEnglish
+      ? 'If I must answer first: choose coverage and stability before price. I would start with the network that works best at home indoors, then compare price. That is a qualified guess, not a guarantee. Where must it work best?'
+      : 'Om jag måste svara först: välj täckning och stabilitet före pris. Jag hade börjat med nätet som fungerar bäst hemma inomhus och sedan jämfört pris. Det är en kvalificerad gissning, inte en garanti. Var måste det funka bäst?';
+  }
+
+  return isEnglish
+    ? 'If I must choose with no more information: start with a mid-sized 5G mobile plan around 20-30 GB. It is a safe all-round choice for many without being as expensive as unlimited data. This is a qualified guess, not an exact personal recommendation. Do you want me to keep guessing or make it accurate with one question?'
+    : 'Om jag måste välja utan mer info: börja med ett mellanstort 5G-abonnemang runt 20-30 GB. Det är ett tryggt allroundval för många utan att bli lika dyrt som obegränsat. Det är en kvalificerad gissning, inte en exakt personlig rekommendation. Vill du att jag gissar vidare eller gör det träffsäkert med en fråga?';
+};
+
+const fallbackReply = ({ intent, language, message, qualification, toolResult, conversationStyle }) => {
   const isEnglish = language === 'en';
   if (intent === 'greeting') {
     return isEnglish
@@ -1391,6 +1490,9 @@ const fallbackReply = ({ intent, language, message, qualification, toolResult })
     return isEnglish
       ? 'I cannot pretend or calculate from fake conditions. Dealett can only compare using the actual operator terms, price, data need and remaining contract time.'
       : 'Jag kan inte låtsas eller räkna på fejkade villkor. Dealett kan bara jämföra med riktiga operatörsvillkor, pris, surfbehov och faktisk bindningstid.';
+  }
+  if (intent === 'style_guided') {
+    return buildStyleGuidedReply({ isEnglish, message, conversationStyle });
   }
   if (intent === 'soft_guidance') {
     return buildSoftGuidanceReply({ isEnglish, message });
@@ -1623,7 +1725,7 @@ const fallbackReply = ({ intent, language, message, qualification, toolResult })
     : 'Vad vill du ha hjälp med hos Dealett?';
 };
 
-const buildPrompt = ({ language, intent, message, messages, qualification, toolResult, facts }) => [
+const buildPrompt = ({ language, intent, message, messages, qualification, toolResult, facts, conversationStyle }) => [
   'You are Dealett assistant, Dealett customer service and sales support.',
   'Use GPT only for conversation, explanation and natural follow-up wording.',
   'Never decide offer validity, prices, savings, coverage availability, invoice dates or account facts.',
@@ -1638,12 +1740,13 @@ const buildPrompt = ({ language, intent, message, messages, qualification, toolR
   `Customer message: ${message}`,
   `Recent conversation: ${JSON.stringify(trimMessages(messages))}`,
   `Memory/qualification: ${JSON.stringify(qualification)}`,
+  `Conversation style: ${JSON.stringify(conversationStyle)}`,
   `Tool result: ${JSON.stringify(toolResult)}`,
   `Relevant Dealett facts: ${JSON.stringify(facts)}`,
 ].join('\n');
 
 const shouldUseDeterministicReply = ({ intent, toolResult }) => {
-  if (['outside_scope', 'offer_discovery', 'browsing', 'not_interested', 'clarify_number', 'dealett_trust', 'fake_condition', 'soft_guidance', 'cheapest_start', 'unknown_customer'].includes(intent)) return true;
+  if (['outside_scope', 'offer_discovery', 'browsing', 'not_interested', 'clarify_number', 'dealett_trust', 'fake_condition', 'soft_guidance', 'style_guided', 'cheapest_start', 'unknown_customer'].includes(intent)) return true;
   return [
     'market_intelligence',
     'qualification',
@@ -1654,6 +1757,164 @@ const shouldUseDeterministicReply = ({ intent, toolResult }) => {
     'coverage',
     'gift_card',
   ].includes(toolResult?.type);
+};
+
+const getRecentConversationText = (message, messages = []) => [
+  ...trimMessages(messages).map((item) => item.content),
+  message,
+].join(' ').toLowerCase();
+
+const hasUncertaintySignal = (text) => (
+  /tror|kanske|typ|runt|vet inte|ingen aning|osäker|osaker|maybe|not sure|roughly|around/i.test(String(text || ''))
+);
+
+const hasSkepticalContext = (text) => (
+  /får ni betalt|far ni betalt|säljare|saljare|bara sälja|bara salja|lita på|lita pa|oberoende|partisk|reklam.*sälj|reklam.*salj/i.test(String(text || ''))
+);
+
+const hasRewardContext = (text) => (
+  /presentkort|belöning|beloning|bonus|reward|gift card/i.test(String(text || ''))
+);
+
+const hasBrowsingContext = (text) => (
+  /kika|tittar runt|testa chatten|såg.*reklam|sag.*reklam|bara kollar|nyfiken/i.test(String(text || ''))
+);
+
+const hasEmotionContext = (text) => (
+  /galen|trött|trott|stress|arg|irriterad|orkar inte|alla luras|frustrerad/i.test(String(text || ''))
+);
+
+const hasTrustMarker = (reply) => (
+  /ersättning|partners|tillit|nuvarande avtal|pressa|sälja|salja|oberoende/i.test(String(reply || ''))
+);
+
+const hasUncertaintyMarker = (reply) => (
+  /ungefär|gissning|inte exakt|kan inte garantera|räcker för att börja|osäker/i.test(String(reply || ''))
+);
+
+const alternateRepeatedReply = (reply, isEnglish = false) => {
+  const text = String(reply || '').trim();
+  if (/hur använder du mobilen/i.test(text)) {
+    return isEnglish
+      ? 'Roughly is enough: mostly Wi-Fi/social media, streaming/video, or maximum data?'
+      : 'Ungefär räcker: mest wifi/sociala medier, streaming/video eller max surf?';
+  }
+  if (/hur många abonnemang/i.test(text)) {
+    return isEnglish
+      ? 'Roughly: is it just you, or several subscriptions?'
+      : 'Ungefär räcker: gäller det bara dig eller flera abonnemang?';
+  }
+  if (/vilken operatör har/i.test(text)) {
+    return isEnglish
+      ? 'Which operator should we use as the rough starting point? If you do not know, write "do not know".'
+      : 'Vilken operatör ska vi utgå från ungefär? Om du inte vet kan du skriva "vet inte".';
+  }
+  if (/bindningstid har du kvar/i.test(text)) {
+    return isEnglish
+      ? 'Roughly how much contract time is left? If you do not know, write "do not know".'
+      : 'Ungefär hur lång bindningstid är kvar? Om du inte vet kan du skriva "vet inte".';
+  }
+  if (/vad betalar du per abonnemang/i.test(text)) {
+    return isEnglish
+      ? 'A rough price is enough: under 300, 300-400, or 400+ SEK?'
+      : 'Ett ungefärligt pris räcker: under 300, 300-400 eller 400+ kr?';
+  }
+  return isEnglish
+    ? `Let me ask it more simply: ${text}`
+    : `Jag frågar enklare: ${text}`;
+};
+
+const softenStrictQualification = (reply, recentText, isEnglish = false) => {
+  let nextReply = String(reply || '');
+  const sensitiveContext = hasSkepticalContext(recentText) || hasRewardContext(recentText) || hasBrowsingContext(recentText);
+  if (!sensitiveContext) return nextReply;
+
+  nextReply = nextReply.replace(
+    /Hur många abonnemang vill du ha\?/g,
+    isEnglish
+      ? 'If you want to compare for real: is it just you or several subscriptions?'
+      : 'Om du vill jämföra på riktigt: gäller det bara dig eller flera?'
+  );
+  nextReply = nextReply.replace(
+    /Vilken operatör har du idag\?/g,
+    isEnglish
+      ? 'Which operator should we use as the rough starting point?'
+      : 'Vilken operatör ska vi utgå från ungefär?'
+  );
+  nextReply = nextReply.replace(
+    /Hur lång bindningstid har du kvar\?/g,
+    isEnglish
+      ? 'Roughly how much contract time is left?'
+      : 'Ungefär hur lång bindningstid är kvar?'
+  );
+  return nextReply;
+};
+
+const addContextMarkers = ({ reply, recentText, intent, isEnglish = false }) => {
+  let nextReply = String(reply || '');
+  if (!nextReply) return nextReply;
+
+  if (hasSkepticalContext(recentText) && !hasTrustMarker(nextReply)) {
+    nextReply = isEnglish
+      ? `Without pushing a sale: ${nextReply}`
+      : `Utan att pressa fram ett byte: ${nextReply}`;
+  } else if (hasRewardContext(recentText) && !/presentkort|belöning|beloning|bonus|totalvärde|totalvarde/i.test(nextReply)) {
+    nextReply = isEnglish
+      ? `So the reward does not become a bad total deal: ${nextReply}`
+      : `För att presentkortet inte ska bli en dålig totalaffär: ${nextReply}`;
+  } else if (hasBrowsingContext(recentText) && !/kika|jämför|jamfor|ingen press|när du vill|nar du vill/i.test(nextReply)) {
+    nextReply = isEnglish
+      ? `No pressure while you browse: ${nextReply}`
+      : `Ingen press medan du kikar: ${nextReply}`;
+  } else if (hasEmotionContext(recentText) && !/förstår|forstar|lugnt|enkelt|steg|press/i.test(nextReply)) {
+    nextReply = isEnglish
+      ? `I understand, we can keep it simple: ${nextReply}`
+      : `Jag förstår, vi håller det enkelt: ${nextReply}`;
+  }
+
+  if (
+    hasUncertaintySignal(recentText) &&
+    !hasUncertaintyMarker(nextReply) &&
+    !['dealett_trust', 'fake_condition'].includes(intent)
+  ) {
+    nextReply = /\?/.test(nextReply)
+      ? (isEnglish ? `Roughly is enough here: ${nextReply}` : `Ungefär räcker här: ${nextReply}`)
+      : (isEnglish ? `Treating this as approximate: ${nextReply}` : `Jag tar det som ungefärligt: ${nextReply}`);
+  }
+
+  if (
+    /rekommenderar|bättre|värt|värde|passa bättre|billigare/i.test(nextReply) &&
+    !/för att|därför|eftersom|because|kostnad|täckning|bindning|surf|total/i.test(nextReply)
+  ) {
+    nextReply += isEnglish
+      ? ' The reason is that price, coverage, binding time and real usage all affect whether a switch is actually worth it.'
+      : ' Det är för att pris, täckning, bindningstid och faktisk användning avgör om ett byte verkligen är värt det.';
+  }
+
+  return nextReply;
+};
+
+const polishReplyForConversation = ({ reply, message, messages = [], language, intent }) => {
+  const isEnglish = language === 'en';
+  const recentText = getRecentConversationText(message, messages);
+  const previousAssistant = [...trimMessages(messages)]
+    .reverse()
+    .find((item) => item.role === 'assistant')?.content || '';
+  let nextReply = String(reply || '').trim();
+
+  if (previousAssistant && nextReply === String(previousAssistant).trim()) {
+    nextReply = alternateRepeatedReply(nextReply, isEnglish);
+  }
+
+  nextReply = softenStrictQualification(nextReply, recentText, isEnglish);
+  nextReply = addContextMarkers({
+    reply: nextReply,
+    recentText,
+    intent,
+    isEnglish,
+  });
+
+  return nextReply.slice(0, 1400);
 };
 
 const generateReply = async (context) => {
@@ -1684,7 +1945,16 @@ const generateReply = async (context) => {
   }
 };
 
-const createChatCompletion = async ({ message, messages, language = 'sv', page = {}, cart = [], qualification = {} }) => {
+const createChatCompletion = async ({
+  message,
+  messages,
+  language = 'sv',
+  page = {},
+  cart = [],
+  qualification = {},
+  conversationStyle = null,
+  context = {},
+}) => {
   const latestMessage = String(message || '').trim();
   if (!latestMessage) {
     const error = new Error('Message is required');
@@ -1695,11 +1965,20 @@ const createChatCompletion = async ({ message, messages, language = 'sv', page =
   const normalizedLanguage = language === 'en' ? 'en' : 'sv';
   const contextualMessage = normalizeContextualMessage(latestMessage, messages);
   const nextQualification = inferQualificationFromText(contextualMessage, qualification);
+  const nextConversationStyle = detectConversationStyle({
+    message: latestMessage,
+    history: messages,
+    context: {
+      ...(context || {}),
+      conversationStyle: conversationStyle || context?.conversationStyle || null,
+    },
+  });
   const intent = detectIntent({
     message: latestMessage,
     messages,
     page,
     qualification: nextQualification,
+    conversationStyle: nextConversationStyle,
   });
   const initialToolResult = buildToolResult({
     intent,
@@ -1732,7 +2011,7 @@ const createChatCompletion = async ({ message, messages, language = 'sv', page =
     cart,
     language: normalizedLanguage,
   });
-  const reply = await generateReply({
+  const rawReply = await generateReply({
     intent,
     language: normalizedLanguage,
     message: latestMessage,
@@ -1740,6 +2019,14 @@ const createChatCompletion = async ({ message, messages, language = 'sv', page =
     qualification: nextQualification,
     toolResult,
     facts,
+    conversationStyle: nextConversationStyle,
+  });
+  const reply = polishReplyForConversation({
+    reply: rawReply,
+    message: latestMessage,
+    messages,
+    language: normalizedLanguage,
+    intent,
   });
 
   return {
@@ -1748,6 +2035,7 @@ const createChatCompletion = async ({ message, messages, language = 'sv', page =
     offerCalculation,
     marketClaim: toolResult.marketClaim || null,
     marketClassification: toolResult.marketClassification || null,
+    conversationStyle: nextConversationStyle,
     suggestions,
     intent,
   };
