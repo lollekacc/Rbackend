@@ -3,6 +3,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "check": "node --check server.js && node --check chat-service.js && node --check offer-service.js && node --check offer-calculator.js"
+    "check": "node --check server.js && node --check chat-service.js && node --check offer-service.js && node --check offer-calculator.js && node --check tests/chatbot-evaluations/run-chatbot-evals.js",
+    "eval:chatbot": "node tests/chatbot-evaluations/run-chatbot-evals.js"
   }
 }

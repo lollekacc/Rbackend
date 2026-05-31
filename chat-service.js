@@ -75,6 +75,58 @@ const normalizeBindingEnd = (value) => {
   return normalized.slice(0, 40);
 };
 
+const numberWords = {
+  en: 1,
+  ett: 1,
+  one: 1,
+  två: 2,
+  tva: 2,
+  two: 2,
+  tre: 3,
+  three: 3,
+  fyra: 4,
+  four: 4,
+  fem: 5,
+  five: 5,
+  sex: 6,
+  six: 6,
+  sju: 7,
+  seven: 7,
+  åtta: 8,
+  atta: 8,
+  eight: 8,
+  nio: 9,
+  nine: 9,
+  tio: 10,
+  ten: 10,
+  elva: 11,
+  eleven: 11,
+  tolv: 12,
+  twelve: 12,
+};
+
+const parseNumberValue = (value) => {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (/^\d+$/.test(normalized)) return Number(normalized);
+  return numberWords[normalized] || null;
+};
+
+const numberWordPattern = Object.keys(numberWords).join('|');
+const numberOnlyPattern = new RegExp(`^(\\d+|${numberWordPattern})$`, 'i');
+
+const normalizeCommonTypos = (message) => String(message || '')
+  .replace(/\babonneamng\b/gi, 'abonnemang')
+  .replace(/\babonnemnet\b/gi, 'abonnemang')
+  .replace(/\babbonemang\b/gi, 'abonnemang')
+  .replace(/\bbehovs analys\b/gi, 'behovsanalys');
+
+const formatBindingValue = (value, isEnglish) => {
+  const normalized = String(value || '');
+  const monthMatch = normalized.match(/^(\d+)\s*months?$/i);
+  if (monthMatch) return isEnglish ? `${monthMatch[1]} months` : `${monthMatch[1]} månader`;
+  return normalized;
+};
+
 const appendUntilPeopleCount = (items, value, peopleCount) => {
   const nextItems = Array.isArray(items) ? [...items] : [];
   const limit = Number(peopleCount) || 1;
@@ -101,21 +153,44 @@ const extractBindingAnswersFromText = (text, peopleCount, currentBindingEnds = [
   const source = String(text || '');
   const lower = source.toLowerCase();
   const matches = [];
-  const pattern = /\b(\d{4}-\d{2}-\d{2})\b|ingen bindningstid|no contract|no binding|vet inte|don't know|dont know|(\d+)\s*(mån|månad|månader|manader|month|months)/gi;
+  const repeatedMatches = [];
+  const pattern = new RegExp(
+    `\\b(\\d{4}-\\d{2}-\\d{2})\\b|ingen bindningstid|no contract|no binding|vet inte|don't know|dont know|(\\d+|${numberWordPattern})\\s*(mån|månad|månader|manader|month|months)`,
+    'gi'
+  );
+
+  for (const match of source.matchAll(new RegExp(`(?:ingen bindningstid|no contract|no binding)\\s*(?:på|for)\\s*(\\d+|${numberWordPattern})`, 'gi'))) {
+    const quantity = parseNumberValue(match[1]);
+    if (quantity) repeatedMatches.push(...Array.from({ length: quantity }, () => 'Ingen bindningstid'));
+  }
+
+  for (const match of source.matchAll(new RegExp(`(\\d+|${numberWordPattern})\\s*(mån|månad|månader|manader|month|months)\\s*(?:på|for)\\s*(\\d+|${numberWordPattern})`, 'gi'))) {
+    const months = parseNumberValue(match[1]);
+    const quantity = parseNumberValue(match[3]);
+    if (months && quantity) repeatedMatches.push(...Array.from({ length: quantity }, () => `${months} months`));
+  }
 
   for (const match of source.matchAll(pattern)) {
     const before = lower.slice(Math.max(0, match.index - 10), match.index);
     if (match[2] && /\binte\s*$|\bnot\s*$/i.test(before)) continue;
     if (match[1]) matches.push(match[1]);
-    else if (match[2]) matches.push(`${Number(match[2])} months`);
-    else if (/vet inte|don't know|dont know/i.test(match[0])) matches.push('Vet inte');
+    else if (match[2]) matches.push(`${parseNumberValue(match[2])} months`);
+    else if (/vet inte|don't know|dont know/i.test(match[0])) {
+      if (!/bindning|avtal|contract|mån|månad|month|kvar|löper|slut/i.test(lower)) continue;
+      matches.push('Vet inte');
+    }
     else matches.push('Ingen bindningstid');
   }
 
-  if (!matches.length) return null;
   const count = Number(peopleCount) || currentBindingEnds.length || 1;
+  if (repeatedMatches.length) return repeatedMatches.slice(0, count);
+  if (!matches.length) return null;
   const appliesToAll = /alla|samtliga|båda|both|all/i.test(lower);
   if (matches.length === 1 && appliesToAll) return Array.from({ length: count }, () => matches[0]);
+
+  if (matches.length === 1 && currentBindingEnds.length < count) {
+    return [...currentBindingEnds, matches[0]].slice(0, count);
+  }
 
   if (
     matches.length === 1 &&
@@ -131,6 +206,17 @@ const extractBindingAnswersFromText = (text, peopleCount, currentBindingEnds = [
   if (matches.length === 1 && count === 1) return [matches[0]];
   return matches.slice(0, count);
 };
+
+const extractOperatorMatches = (text) => [...String(text || '').matchAll(/\b(Telia|Tele2|Telenor|Tre|Halebop)\b/gi)]
+  .filter((match) => {
+    const operator = match[1];
+    if (operator.toLowerCase() !== 'tre') return true;
+
+    const after = String(text || '').slice(match.index + match[0].length, match.index + match[0].length + 24);
+    return !/^\s*(person|personer|abonnemang|subscriptions?|people)\b/i.test(after);
+  })
+  .map((match) => normalizeOperator(match[1]))
+  .filter(Boolean);
 
 const createEmptyQualification = () => ({
   peopleCount: null,
@@ -214,21 +300,21 @@ const inferQualificationFromText = (message, qualification = {}) => {
     bindingEnds: Array.isArray(qualification.bindingEnds) ? [...qualification.bindingEnds] : [],
     exactMonthlyPrices: Array.isArray(qualification.exactMonthlyPrices) ? [...qualification.exactMonthlyPrices] : [],
   };
-  const countMatch = lower.match(/(\d+)\s*(person|personer|abonnemang|subscriptions?|people)/);
+  const countMatch = lower.match(new RegExp(`(\\d+|${numberWordPattern})\\s*(person|personer|abonnemang|subscriptions?|people|hemma|home)`, 'i'));
   const naturalFamilyCount = inferPeopleCountFromFamilyText(lower);
 
-  if (countMatch) next.peopleCount = Number(countMatch[1]);
-  else if (naturalFamilyCount) next.peopleCount = naturalFamilyCount;
-  else if (/\b(one subscription|one person|en person|ett abonnemang|en abonnemang|ett subscription)\b/i.test(lower)) next.peopleCount = 1;
-  else if (/\b(two|två)\s*(subscriptions?|abonnemang|personer|people)?\b/i.test(lower)) next.peopleCount = 2;
-  else if (/\b(three|tre)\s*(subscriptions?|abonnemang|personer|people)?\b/i.test(lower)) next.peopleCount = 3;
-  else if (/\b(four|fyra)\s*(subscriptions?|abonnemang|personer|people)?\b/i.test(lower)) next.peopleCount = 4;
-  else if (/jag och (min )?(mamma|pappa|fru|man|partner)|mom and i|dad and i|my partner and i/i.test(lower)) next.peopleCount = 2;
-  else if (/bara jag|bara mig|just me|only me/i.test(lower)) next.peopleCount = 1;
+  if (countMatch) next.peopleCount = parseNumberValue(countMatch[1]);
+  else if (!Number(next.peopleCount)) {
+    if (naturalFamilyCount) next.peopleCount = naturalFamilyCount;
+    else if (/\b(one subscription|one person|en person|ett abonnemang|en abonnemang|ett subscription)\b/i.test(lower)) next.peopleCount = 1;
+    else if (/\b(two|två)\s+(subscriptions?|abonnemang|personer|people)\b/i.test(lower)) next.peopleCount = 2;
+    else if (/\b(three|tre)\s+(subscriptions?|abonnemang|personer|people)\b/i.test(lower)) next.peopleCount = 3;
+    else if (/\b(four|fyra)\s+(subscriptions?|abonnemang|personer|people)\b/i.test(lower)) next.peopleCount = 4;
+    else if (/jag och (min )?(mamma|pappa|fru|man|partner)|mom and i|dad and i|my partner and i/i.test(lower)) next.peopleCount = 2;
+    else if (/bara jag|bara mig|just me|only me/i.test(lower)) next.peopleCount = 1;
+  }
 
-  const operatorMatches = [...text.matchAll(/\b(Telia|Tele2|Telenor|Tre|Halebop)\b/gi)]
-    .map((match) => normalizeOperator(match[1]))
-    .filter(Boolean);
+  const operatorMatches = extractOperatorMatches(text);
   if (operatorMatches.length) {
     if (operatorMatches.length === 1 && /alla|samtliga|båda|both|all/i.test(lower)) {
       next.operatorAppliesToAll = true;
@@ -237,21 +323,36 @@ const inferQualificationFromText = (message, qualification = {}) => {
       next.operators = [...next.operators, ...operatorMatches].slice(0, Number(next.peopleCount) || 10);
     }
   }
+  if (/samma.*alla|same.*all/i.test(lower) && Number(next.peopleCount) > 1 && next.operators.length === 1) {
+    next.operatorAppliesToAll = true;
+  }
 
   const bindingAnswers = extractBindingAnswersFromText(text, next.peopleCount, next.bindingEnds);
   if (bindingAnswers) {
     if (bindingAnswers.length === 1 && /alla|samtliga|båda|both|all/i.test(lower)) next.bindingAppliesToAll = true;
     next.bindingEnds = bindingAnswers;
   }
+  if (/samma.*alla|same.*all/i.test(lower) && Number(next.peopleCount) > 1 && next.bindingEnds.length === 1) {
+    next.bindingAppliesToAll = true;
+  }
 
   if (/wifi|social|sociala medier|lite surf/i.test(lower)) next.mobileUsage = 'low';
   if (/stream|video|youtube|netflix|hbo|disney/i.test(lower)) next.mobileUsage = 'medium';
-  if (/max surf|obegränsad|obegransad|unlimited|100\s*gb/i.test(lower)) next.mobileUsage = 'high';
+  if (/max surf|fri surf|obegränsad|obegransad|unlimited|unlimited data|100\s*gb/i.test(lower)) next.mobileUsage = 'high';
 
   const priceSource = lower.replace(/\b\d{4}-\d{2}-\d{2}\b/g, ' ');
-  const exactPrices = [...priceSource.matchAll(/(\d{2,4})\s*(kr|sek)/g)]
+  let exactPrices = [...priceSource.matchAll(/(\d{2,4})\s*(kr|sek|kronor|spänn|spann)/g)]
     .map((match) => Number(match[1]))
     .filter((price) => Number.isFinite(price) && price >= 50 && price <= 2000);
+  if (
+    exactPrices.length <= 1 &&
+    /betalar|kostar|pris|kr|sek|kronor|spänn|spann/i.test(priceSource) &&
+    /\b\d{2,4}\b(?:\s+\b\d{2,4}\b)+/.test(priceSource)
+  ) {
+    exactPrices = [...priceSource.matchAll(/\b(\d{2,4})\b/g)]
+      .map((match) => Number(match[1]))
+      .filter((price) => Number.isFinite(price) && price >= 50 && price <= 2000);
+  }
   if (exactPrices.length) {
     const exactPrice = exactPrices[0];
     const rangePrice = exactPrices.length > 1
@@ -335,14 +436,83 @@ const hasPersonalDataInChat = (message) => (
     .test(String(message || ''))
 );
 
+const isBrowsingMessage = (message) => (
+  /tittar runt|kollar runt|kika runt|bara kollar|kolla om|kolla runt|såg.*reklam|testa|nyfiken|något intressant|nåt intressant|har ni det|browsing|looking around|curious|interesting|anything good|good deal/i
+    .test(String(message || ''))
+);
+
+const isReluctantMessage = (message) => (
+  /vill inte|inte intresserad|behöver inte|behover inte|varför ska jag|varfor ska jag|redan abonnemang|redan.*familj|already have|don't want|do not want|not interested/i
+    .test(String(message || ''))
+);
+
+const hasStrongOfferIntent = (message) => (
+  /billigare|dyrt|för dyrt|sänka|sanka|spara|byta|jämför|jamfor|behovsanalys|erbjudande|rekommendera|hjälp.*välja|samla abonnemang|samla.*abonnemang|vill ha.*abonnemang|need cheaper|too expensive|switch|compare|offer|recommend|help.*choose/i
+    .test(String(message || ''))
+);
+
 const isGreetingOnly = (message) => (
   /^(hej|hejsan|hallå|tjena|god morgon|god kväll|hello|hi|hey|good morning|good evening)[!.\s]*$/i
     .test(String(message || '').trim())
 );
 
+const normalizeContextualMessage = (message, messages = []) => {
+  const latest = normalizeCommonTypos(message).trim();
+  const normalized = latest.toLowerCase();
+  const previousMessages = trimMessages(messages);
+
+  const previousAssistant = [...previousMessages]
+    .reverse()
+    .find((item) => item.role === 'assistant')?.content || '';
+  const previousUser = [...previousMessages]
+    .reverse()
+    .find((item) => item.role === 'user')?.content || '';
+
+  const numberMatch = normalized.match(numberOnlyPattern);
+  if (numberMatch) {
+    const parsedNumber = parseNumberValue(numberMatch[1]);
+    if (/hur många abonnemang|one subscription|several subscriptions|gäller det ett abonnemang eller flera|is it one subscription or several/i.test(previousAssistant)) {
+      return `${parsedNumber} abonnemang`;
+    }
+    if (/bindningstid|månader kvar|contract time|contract.*left/i.test(previousAssistant)) {
+      return `${parsedNumber} months`;
+    }
+    if (/vad betalar|pris|price|pay per subscription/i.test(previousAssistant) && parsedNumber >= 50) {
+      return `${parsedNumber} kr`;
+    }
+  }
+
+  if (/^(månader|mån|months?)$/i.test(normalized)) {
+    const previousNumber = String(previousUser || '').trim().toLowerCase().match(numberOnlyPattern);
+    if (previousNumber && /bindningstid|månader kvar|contract time|contract.*left/i.test(previousAssistant)) {
+      return `${parseNumberValue(previousNumber[1])} months`;
+    }
+  }
+
+  const confirmedCount = previousAssistant.match(/menar du\s+(\d+)\s+abonnemang/i);
+  if (confirmedCount && /^(ja|japp|yes|starta|börja|borja|ok|okej)$/i.test(normalized)) {
+    return `${Number(confirmedCount[1])} abonnemang`;
+  }
+
+  if (/^(starta|börja|borja|kom igång|kom igang)$/i.test(normalized)) {
+    const recentText = previousMessages.map((item) => item.content).join(' ');
+    if (/abonnemang|mobil|telefon|behovsanalys/i.test(recentText)) return 'jag vill jämföra abonnemang';
+  }
+
+  return latest;
+};
+
 const detectIntent = ({ message, messages = [], page = {}, qualification = {} }) => {
-  const text = String(message || '').toLowerCase();
+  const text = normalizeCommonTypos(message).toLowerCase();
   const pagePath = String(page?.path || '');
+  const recentUserConversation = trimMessages(messages)
+    .filter((item) => item.role === 'user')
+    .map((item) => item.content)
+    .join(' ')
+    .toLowerCase();
+  const supportContextActive = /faktura|räkning|förfall|invoice|bill|mina sidor|konto|account|kundservice|support/.test(recentUserConversation);
+  const coverageContextActive = /täckning|coverage|nät|map|karta|adress|address/.test(recentUserConversation);
+  const checkoutContextActive = /köp|köpa|beställ|beställa|personnummer|uppgifter|checkout|cart|buy|purchase|personal details/.test(recentUserConversation);
   const hasQualification = Boolean(
     qualification.peopleCount ||
     qualification.mobileUsage ||
@@ -354,13 +524,27 @@ const detectIntent = ({ message, messages = [], page = {}, qualification = {} })
   );
 
   if (isGreetingOnly(text) || /vad kan du|what can you do|vem är du|who are you/i.test(text)) return 'greeting';
+  if (numberOnlyPattern.test(text) && !hasQualification) return 'clarify_number';
   if (hasOutsideTopic(text) && !hasDealettTopic(text)) return 'outside_scope';
+  if (/täckning|coverage|nät|map|karta/i.test(text)) return 'coverage';
+  if (coverageContextActive && /works|work|funkar|fungerar|täckning|coverage|nät|adress|address|karta|map|område|area|bor|live/i.test(text)) return 'coverage';
+  if (
+    hasQualification &&
+    /telia|tele2|telenor|tre|halebop|operatör|operator|no contract|ingen bindningstid|månader kvar|months? left|social|stream|wifi|surf|kr|sek|kronor|spänn|spann/i.test(text)
+  ) return 'mobile_offer';
+  if (coverageContextActive && /tre|telia|tele2|telenor|halebop/i.test(text)) return 'coverage';
+  if (isReluctantMessage(text)) return 'not_interested';
+  if (isBrowsingMessage(text) && !hasStrongOfferIntent(text)) return 'browsing';
+  if (/behovsanalys/i.test(text) && !/abonnemang|mobil|telefon|bredband|5g/i.test(text)) return 'offer_discovery';
   if (/jämför erbjudanden|nytt erbjudande|new offer|compare offers/i.test(text)) return 'offer_discovery';
   if (hasPersonalDataInChat(text)) return 'checkout';
+  if (checkoutContextActive && /inget erbjudande|inte valt|vad gör jag först|no offer|not selected|what do i do first/i.test(text)) return 'checkout';
+  if (hasStrongOfferIntent(text) && /abonnemang|mobil|telefon|subscription|phone plan|mobile plan/i.test(text)) return 'mobile_offer';
+  if (hasStrongOfferIntent(text)) return 'offer_discovery';
+  if (supportContextActive && /redan kund|befintlig kund|ungefär|datum|när|var ska|vart ska|kolla|hittar|already customer|existing customer|roughly|approximately|date|when|where should|where can|check|find/i.test(text)) return 'support';
   if (/faktura|räkning|betalning|förfall|invoice|\bbill\b|payment|due|mitt abonnemang|min bindningstid|hur länge|subscription length|my subscription|contract length|avtal|kundservice|support|mina sidor|konto|account|logga in|login|ändra|uppgradera|säga upp|cancel|befintlig kund|redan kund|existing customer|already customer|current customer/i.test(text)) return 'support';
   if (/signera|signering|köp|köpa|beställ|beställa|lägg.*varukorg|varukorg|flytta.*nummer|nummerflytt|startdatum|checkout|cart|purchase|buy|sign/i.test(text)) return 'checkout';
   if (/presentkort|gift card|reward|belöning/i.test(text)) return 'gift_card';
-  if (/täckning|coverage|nät|map|karta/i.test(text)) return 'coverage';
   if (/bredband|5g[-\s]?bredband|fiber|router|adress|broadband|tv-kanal|tv kanal/i.test(text) || pagePath.includes('5g-bredband')) return 'broadband';
   if (
     /familj|familje|mamma|pappa|\bfru\b|\bmake\b|partner|flera|båda|family|wife|husband/i.test(text) &&
@@ -377,7 +561,7 @@ const detectIntent = ({ message, messages = [], page = {}, qualification = {} })
 
 const defaultSuggestions = ({ intent, qualification, offerCalculation, cart, language }) => {
   const isEnglish = language === 'en';
-  if (intent === 'greeting' || intent === 'unclear' || intent === 'unclear_direct' || intent === 'outside_scope') {
+  if (intent === 'greeting' || intent === 'unclear' || intent === 'unclear_direct' || intent === 'outside_scope' || intent === 'browsing' || intent === 'not_interested') {
     return isEnglish
       ? ['New offer', 'Existing customer', 'My cart', '5G broadband']
       : ['Nytt erbjudande', 'Befintlig kund', 'Min varukorg', '5G-bredband'];
@@ -536,6 +720,173 @@ const summarizeCartItem = (item) => {
   return [title, price, reward].filter(Boolean).join(', ');
 };
 
+const wantsExplanation = (message) => /varför|förklara|kalkyl|bättre|värt|värd|räkna|snackar|details|explain|why|worth|calculation/i
+  .test(String(message || ''));
+
+const wantsToProceed = (message) => /gå vidare|beställ|beställa|köpa|köp|checkout|varukorg|proceed|continue|order|buy|cart/i
+  .test(String(message || ''));
+
+const asksForException = (message) => /ändå|ändå samla|göra ändå|finns det något|kan vi ändå|can.*anyway|anything.*do/i
+  .test(String(message || ''));
+
+const buildBrowsingReply = ({ isEnglish, message }) => {
+  const text = String(message || '').toLowerCase();
+  if (/reklam|ad|advert/i.test(text)) {
+    return isEnglish
+      ? 'Welcome. The interesting part is not that we sell another plan, but that we can check whether your current deal can be beaten after price, binding time and gift card. You can browse first; I only start a comparison when you ask for one.'
+      : 'Välkommen. Det intressanta är inte att vi bara säljer ett nytt abonnemang, utan att vi kan kontrollera om ditt nuvarande avtal faktiskt går att slå efter pris, bindningstid och presentkort. Kolla runt först; jag börjar jämföra först när du ber om det.';
+  }
+  if (/har ni|något intressant|nåt intressant|interesting/i.test(text)) {
+    return isEnglish
+      ? 'Yes, potentially: mobile plans, family bundles, 5G broadband, coverage help and gift-card offers. But it is only interesting if it improves your current situation. Want a quick overview, or do you just want to browse?'
+      : 'Ja, potentiellt: mobilabonnemang, familjepaket, 5G-bredband, täckningshjälp och presentkortserbjudanden. Men det är bara intressant om det förbättrar det du har idag. Vill du ha en snabb överblick, eller vill du bara kika runt?';
+  }
+  return isEnglish
+    ? 'Browse in peace. Dealett is useful when you want to see if your current mobile plan, family subscriptions or 5G broadband can become cheaper or fit better. I can explain offers first, and only compare when you want me to.'
+    : 'Kika runt i lugn och ro. Dealett är mest användbart när du vill se om ditt nuvarande abonnemang, familjens abonnemang eller 5G-bredband kan bli billigare eller passa bättre. Jag kan förklara erbjudanden först och jämföra först när du vill.';
+};
+
+const buildNotInterestedReply = ({ isEnglish, message }) => {
+  const text = String(message || '').toLowerCase();
+  if (/varför|varfor|why/i.test(text)) {
+    return isEnglish
+      ? 'You should not switch unless it is clearly better. The point is to compare your current cost, binding time and needs against Dealett offers. If the math is not better, the right answer is to keep what you have.'
+      : 'Du ska inte byta om det inte tydligt blir bättre. Poängen är att jämföra din nuvarande kostnad, bindningstid och behov mot Dealetts erbjudanden. Om kalkylen inte blir bättre är rätt svar att behålla det du har.';
+  }
+  if (/redan|already/i.test(text)) {
+    return isEnglish
+      ? 'Exactly, most customers already have a plan. Dealett is for checking whether that plan is still worth keeping, especially for families, high prices, poor coverage, more data or 5G broadband.'
+      : 'Precis, de flesta har redan abonnemang. Dealett är till för att kontrollera om det fortfarande är värt att behålla, särskilt för familjer, höga priser, dålig täckning, mer surf eller 5G-bredband.';
+  }
+  if (/vill inte|not interested|don't want|do not want/i.test(text)) {
+    return isEnglish
+      ? 'No problem. I will not push you into an offer. I can just answer questions about Dealett, gift cards, coverage, broadband or how the comparison works.'
+      : 'Inga problem. Jag ska inte pressa dig till ett erbjudande. Jag kan bara svara på frågor om Dealett, presentkort, täckning, bredband eller hur jämförelsen fungerar.';
+  }
+  return isEnglish
+    ? 'That is completely fine. Dealett is only worth using if we can show a better fit, lower total cost, better data, coverage, broadband or gift-card value.'
+    : 'Det är helt okej. Dealett är bara värt det om vi kan visa bättre passform, lägre totalkostnad, bättre surf, täckning, bredband eller presentkortsvärde.';
+};
+
+const buildMissingInfoReply = ({ nextField, isEnglish, message, qualification }) => {
+  const text = String(message || '').toLowerCase();
+  const labels = {
+    peopleCount: isEnglish ? 'How many subscriptions do you need?' : 'Hur många abonnemang vill du ha?',
+    operators: isEnglish ? 'Which operator do you use today?' : 'Vilken operatör har du idag?',
+    bindingEnds: isEnglish ? 'How much contract time is left?' : 'Hur lång bindningstid har du kvar?',
+    mobileUsage: isEnglish ? 'How do you use mobile data?' : 'Hur använder du mobilen?',
+    priceRange: isEnglish ? 'What do you pay per subscription today?' : 'Vad betalar du per abonnemang idag?',
+  };
+
+  if (nextField === 'peopleCount') {
+    if (/vet inte|not sure|don't know|dont know/i.test(text)) {
+      return isEnglish
+        ? 'No stress. Let us start simple: is it one subscription or several?'
+        : 'Ingen fara. Vi börjar enkelt: gäller det ett abonnemang eller flera?';
+    }
+    if (/kanske mobil|maybe mobile/i.test(text)) {
+      return isEnglish
+        ? 'Then we can compare mobile plans. Is it just for you, or do you need several subscriptions?'
+        : 'Då jämför vi mobilabonnemang. Gäller det bara dig eller behöver du flera abonnemang?';
+    }
+    if (/vad är bäst|what.*best/i.test(text)) {
+      return isEnglish
+        ? 'The best option depends on how many subscriptions we compare. Is it 1, 2, 3 or more?'
+        : 'Det bästa valet beror först på hur många abonnemang vi jämför. Är det 1, 2, 3 eller fler?';
+    }
+  }
+
+  if (
+    nextField === 'operators' &&
+    Number(qualification?.peopleCount) > 1 &&
+    /min fru|son|dotter|mamma|pappa|wife|husband|daughter/i.test(text)
+  ) {
+    return isEnglish
+      ? 'Got it. Now I need the current operator for each subscription.'
+      : 'Jag förstår. Nu behöver jag nuvarande operatör för varje abonnemang.';
+  }
+
+  if (nextField === 'operators' && /^(starta|börja|borja|ok|okej|ja)$/i.test(text)) {
+    return isEnglish
+      ? 'We are started. First I need the current operator for the subscription or subscriptions, for example Telia, Tele2, Telenor, Tre or Halebop.'
+      : 'Vi är igång. Först behöver jag nuvarande operatör för abonnemanget eller abonnemangen, till exempel Telia, Tele2, Telenor, Tre eller Halebop.';
+  }
+
+  if (nextField === 'operators' && /^(nää|nä|nej|inget|vet inte|ingen aning|no|nothing|not sure)$/i.test(text)) {
+    if (/inget|nothing/i.test(text)) {
+      return isEnglish
+        ? 'Then we skip preferences and use the current situation. Which operator do you use today: Telia, Tele2, Telenor, Tre or Halebop?'
+        : 'Då struntar vi i önskemål och tar nuläget. Vilken operatör har ni idag: Telia, Tele2, Telenor, Tre eller Halebop?';
+    }
+    if (/vet inte|ingen aning|not sure/i.test(text)) {
+      return isEnglish
+        ? 'If you are unsure, check the latest invoice or app. For the comparison I need the current operator for each subscription.'
+        : 'Om du är osäker kan du kolla senaste fakturan eller appen. För jämförelsen behöver jag nuvarande operatör för varje abonnemang.';
+    }
+    return isEnglish
+      ? 'No preference is fine. I only need the operator you use today, for example Telia, Tele2, Telenor, Tre or Halebop. If all subscriptions use the same one, write "Tele2 for all".'
+      : 'Du behöver inte ha någon önskad operatör. Jag behöver bara veta operatören ni har idag, till exempel Telia, Tele2, Telenor, Tre eller Halebop. Om alla har samma kan du skriva "Tele2 på alla".';
+  }
+
+  if (nextField === 'operators' && Number(qualification?.peopleCount) > 1 && !qualification?.operators?.length) {
+    return isEnglish
+      ? 'Which operator does each subscription use today? You can write them one by one, or say for example "Tele2 for all".'
+      : 'Vilken operatör har varje abonnemang idag? Du kan skriva dem en i taget, eller till exempel "Tele2 på alla".';
+  }
+
+  if (nextField === 'operators' && Number(qualification?.peopleCount) > 1 && qualification?.operators?.length) {
+    const left = Number(qualification.peopleCount) - qualification.operators.length;
+    return isEnglish
+      ? `I have ${qualification.operators.join(', ')} so far. Which operator do the other ${left} subscription${left === 1 ? '' : 's'} use? If all use the same operator, write "same for all".`
+      : `Jag har ${qualification.operators.join(', ')} hittills. Vilken operatör har de andra ${left} abonnemang${left === 1 ? 'et' : 'en'}? Om alla har samma kan du skriva "samma för alla".`;
+  }
+
+  if (nextField === 'bindingEnds' && Number(qualification?.peopleCount) > 1 && !qualification?.bindingEnds?.length) {
+    if (/samma.*alla|same.*all/i.test(text)) {
+      return isEnglish
+        ? 'Same for all works, but I still need the number of months. For example: "3 months for all" or "no contract for all".'
+        : 'Samma för alla funkar, men jag behöver antal månader. Till exempel: "3 månader på alla" eller "ingen bindningstid på alla".';
+    }
+    return isEnglish
+      ? 'How much contract time is left on each subscription? You can answer one by one, or say for example "3 months for all".'
+      : 'Hur lång bindningstid har varje abonnemang kvar? Du kan svara en i taget, eller till exempel "3 månader på alla".';
+  }
+
+  if (nextField === 'bindingEnds' && Number(qualification?.peopleCount) > 1 && qualification?.bindingEnds?.length) {
+    const left = Number(qualification.peopleCount) - qualification.bindingEnds.length;
+    const bindingList = qualification.bindingEnds.map((value) => formatBindingValue(value, isEnglish)).join(', ');
+    return isEnglish
+      ? `I have ${bindingList} so far. How much contract time is left for the other ${left} subscription${left === 1 ? '' : 's'}? You can answer like "2 months", "no contract", or "same for all".`
+      : `Jag har ${bindingList} hittills. Hur lång bindningstid har de andra ${left} abonnemang${left === 1 ? 'et' : 'en'}? Du kan svara till exempel "2 månader", "ingen bindningstid" eller "samma för alla".`;
+  }
+
+  if (nextField === 'mobileUsage' && /^(nää|nä|nej|inget|vet inte|ingen aning|no|nothing|not sure)$/i.test(text)) {
+    return isEnglish
+      ? 'No worries. Pick the closest one: mostly Wi-Fi/social media, streaming/video, or maximum data?'
+      : 'Ingen fara. Välj det som ligger närmast: mest wifi/sociala medier, streaming/video eller max surf?';
+  }
+
+  if (nextField === 'mobileUsage' && /^(månader|mån|months?)$/i.test(text)) {
+    return isEnglish
+      ? 'Got it, the contract time is noted. Next I need the usage level: mostly Wi-Fi/social media, streaming/video, or maximum data?'
+      : 'Jag har noterat bindningstiden. Nästa steg är användningen: mest wifi/sociala medier, streaming/video eller max surf?';
+  }
+
+  if (nextField === 'bindingEnds' && /^(nää|nä|nej|inget|vet inte|ingen aning|no|nothing|not sure)$/i.test(text)) {
+    return isEnglish
+      ? 'If you do not know the exact contract time, say "do not know". For an exact offer later, we need the real remaining months.'
+      : 'Om du inte vet exakt kan du skriva "vet inte". För ett exakt erbjudande senare behöver vi riktiga kvarvarande månader.';
+  }
+
+  if (nextField === 'priceRange' && /^(nää|nä|nej|inget|vet inte|ingen aning|no|nothing|not sure)$/i.test(text)) {
+    return isEnglish
+      ? 'No problem. A rough current price is enough to start: under 300, 300-400, or 400-500+ SEK per subscription?'
+      : 'Ingen fara. Ett ungefärligt pris räcker för att börja: under 300, 300-400 eller 400-500+ kr per abonnemang?';
+  }
+
+  return labels[nextField] || (isEnglish ? 'I need one more detail to compare.' : 'Jag behöver en uppgift till för att jämföra.');
+};
+
 const fallbackReply = ({ intent, language, message, qualification, toolResult }) => {
   const isEnglish = language === 'en';
   if (intent === 'greeting') {
@@ -550,8 +901,19 @@ const fallbackReply = ({ intent, language, message, qualification, toolResult })
   }
   if (intent === 'offer_discovery') {
     return isEnglish
-      ? 'Sure. Do you want help with a mobile plan, family plan, or 5G broadband?'
-      : 'Absolut. Vill du ha hjälp med mobilabonnemang, familjepaket eller 5G-bredband?';
+      ? 'Sure. We can do a needs analysis. Should we look at mobile subscriptions, a family bundle, or 5G broadband?'
+      : 'Absolut. Vi kan göra en behovsanalys. Ska vi titta på mobilabonnemang, familjepaket eller 5G-bredband?';
+  }
+  if (intent === 'browsing') {
+    return buildBrowsingReply({ isEnglish, message });
+  }
+  if (intent === 'not_interested') {
+    return buildNotInterestedReply({ isEnglish, message });
+  }
+  if (intent === 'clarify_number') {
+    return isEnglish
+      ? `Do you mean ${String(message).trim()} subscriptions? If you want, I can compare them, but I will not start the offer flow until you say you want a comparison.`
+      : `Menar du ${String(message).trim()} abonnemang? Om du vill kan jag jämföra dem, men jag startar inte erbjudandeflödet förrän du säger att du vill jämföra.`;
   }
   if (intent === 'unclear_direct') {
     return isEnglish
@@ -567,6 +929,36 @@ const fallbackReply = ({ intent, language, message, qualification, toolResult })
     const selected = toolResult?.selectedCartItem
       ? `${toolResult.selectedCartItem.operator || 'Dealett'} ${toolResult.selectedCartItem.title || 'abonnemang'}`
       : null;
+    if (/redan kund|befintlig kund|already customer|existing customer/i.test(message)) {
+      return isEnglish
+        ? 'I understand. Even for existing customers, the chat is not connected to live account data, so invoice dates and contract details must be checked in My pages or support.'
+        : 'Jag förstår. Även för befintliga kunder är chatten inte kopplad till live-data, så fakturadatum och avtalsdetaljer behöver kontrolleras i Mina sidor eller support.';
+    }
+    if (/se mitt abonnemang|se mina abonnemang|mitt abonnemang|can you see.*subscription|my subscription/i.test(message)) {
+      return isEnglish
+        ? 'I cannot see your active subscription from chat. My pages should show your current plan, binding time and invoices.'
+        : 'Jag kan inte se ditt aktiva abonnemang från chatten. Mina sidor ska visa nuvarande abonnemang, bindningstid och fakturor.';
+    }
+    if (/bindningstid|löper ut|går.*ut|contract.*end|contract.*left/i.test(message)) {
+      return isEnglish
+        ? 'I cannot look up your exact contract end date here. Check My pages for the binding period, or contact support if it is missing.'
+        : 'Jag kan inte slå upp exakt när bindningstiden går ut här. Kolla Mina sidor för bindningstid, eller kontakta support om den saknas.';
+    }
+    if (/ungefär|bara säga|roughly|approximately/i.test(message)) {
+      return isEnglish
+        ? 'I should not give even an approximate invoice date without account data. My pages is the place for the exact due date.'
+        : 'Jag ska inte ge ens ett ungefärligt fakturadatum utan kontodata. Mina sidor är rätt plats för exakt förfallodatum.';
+    }
+    if (/datum|när kommer|vilket datum|which date/i.test(message)) {
+      return isEnglish
+        ? 'I do not want to guess a billing date. The safe answer is to check My pages, where the exact invoice, due date and payment status should be shown.'
+        : 'Jag vill inte gissa ett fakturadatum. Det säkra är att kolla Mina sidor, där exakt faktura, förfallodatum och betalstatus ska visas.';
+    }
+    if (/var ska|vart ska|var.*kolla|vart.*kolla|where should|where can|where.*check/i.test(message)) {
+      return isEnglish
+        ? 'Check My pages first. If the invoice is missing there too, contact support so they can look up your account.'
+        : 'Kolla Mina sidor först. Om fakturan saknas där också behöver supporten titta på ditt konto.';
+    }
     if (selected) {
       return isEnglish
         ? `I can see ${selected} in your cart, but I do not have live account or invoice data in chat. Use My pages for exact billing or subscription details.`
@@ -583,14 +975,34 @@ const fallbackReply = ({ intent, language, message, qualification, toolResult })
         ? 'Do not send phone numbers or personal details in chat.'
         : 'Skicka inte telefonnummer eller personuppgifter i chatten.')
       : '';
+    if (!summary && /personnummer|personal identity|identity number|ssn/i.test(message)) {
+      return isEnglish
+        ? 'No, do not write personal identity details in chat. First choose a valid offer; identity checks and signing belong in the secure cart flow.'
+        : 'Nej, skriv inte personnummer i chatten. Välj först ett giltigt erbjudande; identitetskontroll och signering hör hemma i det säkra varukorgsflödet.';
+    }
+    if (!summary && /telefonnummer|phone number|mitt nummer|my number|\b07\d/i.test(message)) {
+      return isEnglish
+        ? 'Do not send your phone number here. Start with a valid offer first, then number transfer is handled in the cart.'
+        : 'Skicka inte telefonnummer här. Börja med ett giltigt erbjudande först, sedan hanteras nummerflytt i varukorgen.';
+    }
+    if (!summary && /inget erbjudande|inte valt|no offer|not selected/i.test(message)) {
+      return isEnglish
+        ? 'Then the first step is comparison, not checkout. Tell me if it is for mobile subscriptions, a family bundle or 5G broadband, and I will collect the needed details.'
+        : 'Då är första steget jämförelse, inte köp. Säg om det gäller mobilabonnemang, familjepaket eller 5G-bredband så samlar jag rätt uppgifter.';
+    }
+    if (!summary && /vad gör jag först|what do i do first/i.test(message)) {
+      return isEnglish
+        ? 'Start by choosing what we should compare: mobile plan, family bundle or 5G broadband. When a valid offer exists, the cart handles the purchase.'
+        : 'Börja med att välja vad vi ska jämföra: mobilabonnemang, familjepaket eller 5G-bredband. När ett giltigt erbjudande finns tar varukorgen köpet.';
+    }
     if (summary) {
       return isEnglish
         ? [personalDataWarning, `Your cart contains: ${summary}. Continue in the cart for number transfer, start date and signing.`].filter(Boolean).join(' ')
         : [personalDataWarning, `I varukorgen finns: ${summary}. Fortsätt där för nummerflytt, startdatum och signering.`].filter(Boolean).join(' ');
     }
     return isEnglish
-      ? [personalDataWarning, 'Continue in the cart for contact details, number transfer, start date and signing.'].filter(Boolean).join(' ')
-      : [personalDataWarning, 'Fortsätt i varukorgen för kontaktuppgifter, nummerflytt, startdatum och signering.'].filter(Boolean).join(' ');
+      ? [personalDataWarning, 'First choose a valid offer. After that, continue in the cart for contact details, number transfer, start date and signing.'].filter(Boolean).join(' ')
+      : [personalDataWarning, 'Välj först ett giltigt erbjudande. Efter det fortsätter du i varukorgen för kontaktuppgifter, nummerflytt, startdatum och signering.'].filter(Boolean).join(' ');
   }
   if (intent === 'gift_card') {
     const summary = summarizeCartItem(toolResult?.cart?.[0]);
@@ -605,24 +1017,52 @@ const fallbackReply = ({ intent, language, message, qualification, toolResult })
       : `Dealett erbjuder presentkort med utvalda erbjudanden. Exempel är ${cards}. Välj först ett erbjudande, sedan fortsätter du till varukorgen.`;
   }
   if (intent === 'broadband') {
+    if (/fiber/i.test(message)) {
+      return isEnglish
+        ? '5G broadband can be an alternative to fiber if the coverage and capacity are good at your address. Check with address or coverage map before deciding.'
+        : '5G-bredband kan vara ett alternativ till fiber om täckning och kapacitet är bra på din adress. Kontrollera med adress eller täckningskarta innan du bestämmer dig.';
+    }
+    if (/adress|address/i.test(message)) {
+      return isEnglish
+        ? 'For an exact availability check, yes: use the address field on the 5G broadband page. The chat should not collect your full address.'
+        : 'För exakt tillgänglighet, ja: använd adressfältet på 5G-bredbandssidan. Chatten ska inte samla in din fullständiga adress.';
+    }
     return isEnglish
       ? 'For 5G broadband, the next step is to enter your address or open the coverage map. I can show the available offers, but exact availability must be checked by address.'
       : 'För 5G-bredband är nästa steg att skriva adress eller öppna täckningskartan. Jag kan visa erbjudanden, men exakt tillgänglighet måste kontrolleras med adress.';
   }
   if (intent === 'coverage') {
+    if (/karta|map/i.test(message)) {
+      return isEnglish
+        ? 'Yes, use the coverage map. It is the right next step when you do not want to share an exact address in chat.'
+        : 'Ja, använd täckningskartan. Det är rätt nästa steg när du inte vill skriva exakt adress i chatten.';
+    }
+    if (/inte.*adress|exakta adress|do not want.*address|don't want.*address/i.test(message)) {
+      return isEnglish
+        ? 'That is fine. You do not need to share the address in chat; use the coverage map or address check on the site so the result stays private and specific.'
+        : 'Det är helt okej. Du behöver inte skriva adressen i chatten; använd täckningskartan eller adresskontrollen på sidan så blir svaret privat och mer exakt.';
+    }
+    if (/funkar|fungerar|lägenheten|works|work|apartment/i.test(message)) {
+      return isEnglish
+        ? 'I cannot know indoor coverage from chat. Buildings can change the signal, so the right check is the coverage map and, when available, an address-based check.'
+        : 'Jag kan inte veta inomhustäckning från chatten. Byggnader kan påverka signalen, så rätt kontroll är täckningskartan och när det finns, adresskontroll.';
+    }
+    if (/vad borde|kontrollera|what should|check/i.test(message)) {
+      return isEnglish
+        ? 'Open the coverage map, compare the operator at your area, and avoid ordering until the map/address check looks good for where you will use it most.'
+        : 'Öppna täckningskartan, jämför operatören där du bor och beställ först när karta/adresskontroll ser bra ut för platsen där du använder tjänsten mest.';
+    }
     return isEnglish
       ? 'Coverage depends on the exact area, so I cannot guarantee it from chat. Open the coverage map to compare operators at your address.'
       : 'Täckning beror på exakt område, så jag kan inte garantera den i chatten. Öppna täckningskartan för att jämföra operatörer på din adress.';
   }
   if (['mobile_offer', 'family_offer'].includes(intent) && toolResult?.status === 'missing_info') {
-    const labels = {
-      peopleCount: isEnglish ? 'How many subscriptions do you need?' : 'Hur många abonnemang vill du ha?',
-      operators: isEnglish ? 'Which operator do you use today?' : 'Vilken operatör har du idag?',
-      bindingEnds: isEnglish ? 'How much contract time is left?' : 'Hur lång bindningstid har du kvar?',
-      mobileUsage: isEnglish ? 'How do you use mobile data?' : 'Hur använder du mobilen?',
-      priceRange: isEnglish ? 'What do you pay per subscription today?' : 'Vad betalar du per abonnemang idag?',
-    };
-    return labels[toolResult.nextField] || (isEnglish ? 'I need one more detail to compare.' : 'Jag behöver en uppgift till för att jämföra.');
+    return buildMissingInfoReply({
+      nextField: toolResult.nextField,
+      isEnglish,
+      message,
+      qualification,
+    });
   }
   if (toolResult?.status === 'valid_offer') {
     const top = toolResult.offerCalculation.options[0];
@@ -631,6 +1071,21 @@ const fallbackReply = ({ intent, language, message, qualification, toolResult })
         ? `${top.monthlyPrice} SEK/month total, about ${top.pricePerPerson} SEK per subscription`
         : `${top.monthlyPrice} kr/mån totalt, cirka ${top.pricePerPerson} kr per abonnemang`)
       : (isEnglish ? `${top.monthlyPrice} SEK/month` : `${top.monthlyPrice} kr/mån`);
+    if (wantsExplanation(message)) {
+      return isEnglish
+        ? `It is better because the code calculation compares your current cost with ${top.operator} ${top.title}, includes ${top.overlapCostKnown} SEK overlap cost and ${top.rewardTotal} SEK gift card, and still estimates ${top.savingsVsStaying} SEK in savings over ${top.contractMonths} months.`
+        : `Det är bättre eftersom kalkylen jämför din nuvarande kostnad med ${top.operator} ${top.title}, räknar med ${top.overlapCostKnown} kr i dubbelkostnad och ${top.rewardTotal} kr i presentkort, och ändå visar cirka ${top.savingsVsStaying} kr i vinst över ${top.contractMonths} månader.`;
+    }
+    if (wantsToProceed(message)) {
+      return isEnglish
+        ? `Yes. The valid option is ${top.operator} ${top.title} for ${priceText}. Continue in the cart to choose gift card, number transfer, start date and signing.`
+        : `Ja. Det giltiga alternativet är ${top.operator} ${top.title} för ${priceText}. Fortsätt i varukorgen för att välja presentkort, nummerflytt, startdatum och signering.`;
+    }
+    if (/visa bästa|bästa|show best|best option/i.test(message)) {
+      return isEnglish
+        ? `Best valid option right now: ${top.operator} ${top.title} for ${priceText}, with estimated savings of ${top.savingsVsStaying} SEK after overlap cost and gift card.`
+        : `Bästa giltiga alternativet just nu: ${top.operator} ${top.title} för ${priceText}, med uppskattad vinst på ${top.savingsVsStaying} kr efter dubbelkostnad och presentkort.`;
+    }
     return isEnglish
       ? `I found a valid option: ${top.operator} ${top.title} for ${priceText}. The estimated saving is ${top.savingsVsStaying} SEK after overlap cost and gift card.`
       : `Jag hittade ett giltigt alternativ: ${top.operator} ${top.title} för ${priceText}. Uppskattad vinst är ${top.savingsVsStaying} kr efter dubbelkostnad och presentkort.`;
@@ -638,6 +1093,11 @@ const fallbackReply = ({ intent, language, message, qualification, toolResult })
   if (toolResult?.status === 'no_valid_offer') {
     const reason = toolResult.offerCalculation.noOfferReason;
     if (/mer än 6|more than 6/i.test(String(reason || ''))) {
+      if (asksForException(message)) {
+        return isEnglish
+          ? 'Not as a valid Dealett switch today. With more than 6 months left, the safer advice is to wait until the remaining contract time is 6 months or less, then compare again with the exact price and binding time.'
+          : 'Inte som ett giltigt Dealett-byte idag. När mer än 6 månader återstår är rådet att vänta tills bindningstiden är högst 6 månader och sedan jämföra igen med exakt pris och bindningstid.';
+      }
       return isEnglish
         ? 'I should not recommend switching right now because at least one subscription has more than 6 months left. Dealett only creates an offer when the remaining contract time is 6 months or less and the total becomes cheaper after overlap cost and gift card.'
         : 'Jag ska inte rekommendera byte just nu eftersom minst ett abonnemang har mer än 6 månader kvar. Dealett tar bara fram erbjudande när bindningstiden är högst 6 månader och totalen blir billigare efter dubbelkostnad och presentkort.';
@@ -668,7 +1128,22 @@ const buildPrompt = ({ language, intent, message, messages, qualification, toolR
   `Relevant Dealett facts: ${JSON.stringify(facts)}`,
 ].join('\n');
 
+const shouldUseDeterministicReply = ({ intent, toolResult }) => {
+  if (['outside_scope', 'offer_discovery', 'browsing', 'not_interested', 'clarify_number'].includes(intent)) return true;
+  return [
+    'qualification',
+    'offer_calculator',
+    'cart',
+    'customer_service',
+    'broadband',
+    'coverage',
+    'gift_card',
+  ].includes(toolResult?.type);
+};
+
 const generateReply = async (context) => {
+  if (shouldUseDeterministicReply(context)) return fallbackReply(context);
+
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) return fallbackReply(context);
 
@@ -703,7 +1178,8 @@ const createChatCompletion = async ({ message, messages, language = 'sv', page =
   }
 
   const normalizedLanguage = language === 'en' ? 'en' : 'sv';
-  const nextQualification = inferQualificationFromText(latestMessage, qualification);
+  const contextualMessage = normalizeContextualMessage(latestMessage, messages);
+  const nextQualification = inferQualificationFromText(contextualMessage, qualification);
   const intent = detectIntent({
     message: latestMessage,
     messages,
