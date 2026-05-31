@@ -3,11 +3,19 @@ const path = require('node:path');
 
 const { calculateOfferOptions } = require('./offer-calculator');
 const { getBroadbandPlans, getPlans } = require('./offer-service');
+const { classifyCustomerClaim } = require('./src/marketIntelligence');
 
 const OPENAI_ENDPOINT = 'https://api.openai.com/v1/responses';
 const DEFAULT_MODEL = 'gpt-4o-mini';
 const CHAT_RULES_DIR = path.join(__dirname, 'chat');
 const ALLOWED_OPERATORS = ['Telia', 'Tele2', 'Telenor', 'Tre', 'Halebop'];
+const OPERATOR_ID_BY_NAME = {
+  Telia: 'telia',
+  Tele2: 'tele2',
+  Telenor: 'telenor',
+  Tre: 'tre',
+  Halebop: 'halebop',
+};
 
 const emptyOfferCalculation = (qualification = {}) => ({
   readyForOffer: Boolean(qualification.readyForOffer),
@@ -339,6 +347,13 @@ const inferQualificationFromText = (message, qualification = {}) => {
   if (/wifi|social|sociala medier|lite surf/i.test(lower)) next.mobileUsage = 'low';
   if (/stream|video|youtube|netflix|hbo|disney/i.test(lower)) next.mobileUsage = 'medium';
   if (/max surf|fri surf|obegränsad|obegransad|unlimited|unlimited data|100\s*gb/i.test(lower)) next.mobileUsage = 'high';
+  const dataGbMatch = lower.match(/(\d{1,4})\s*(gb|gigabyte|gig|giga)\b/i);
+  if (dataGbMatch) {
+    const dataGb = Number(dataGbMatch[1]);
+    if (dataGb >= 100) next.mobileUsage = 'high';
+    else if (dataGb >= 20) next.mobileUsage = 'medium';
+    else next.mobileUsage = 'low';
+  }
 
   const priceSource = lower.replace(/\b\d{4}-\d{2}-\d{2}\b/g, ' ');
   let exactPrices = [...priceSource.matchAll(/(\d{2,4})\s*(kr|sek|kronor|spänn|spann)/g)]
@@ -380,6 +395,130 @@ const inferQualificationFromText = (message, qualification = {}) => {
   }
 
   return normalizeQualification(next);
+};
+
+const getRecentUserText = (message, messages = []) => [
+  ...trimMessages(messages)
+    .filter((item) => item.role === 'user')
+    .map((item) => item.content),
+  message,
+].join(' ');
+
+const getAveragePrice = (prices = []) => {
+  const numericPrices = prices
+    .map((price) => Number(price))
+    .filter((price) => Number.isFinite(price) && price > 0);
+  if (!numericPrices.length) return null;
+  return Math.round(numericPrices.reduce((sum, price) => sum + price, 0) / numericPrices.length);
+};
+
+const extractMarketDataGb = (text) => {
+  const matches = [...String(text || '').matchAll(/(\d{1,4})\s*(gb|gigabyte|gig|giga)\b/gi)]
+    .map((match) => Number(match[1]))
+    .filter((value) => Number.isFinite(value) && value >= 0);
+  return matches.length ? matches[matches.length - 1] : null;
+};
+
+const extractCampaignMonths = (text) => {
+  const match = String(text || '').match(/(?:kampanj|campaign|första|first)[^\d]*(\d{1,2})\s*(mån|månad|månader|month|months)/i);
+  return match ? Number(match[1]) : null;
+};
+
+const extractNormalPriceAfterCampaign = (text) => {
+  const match = String(text || '').match(/(?:efter|sedan|sen|därefter|after|then)[^\d]*(\d{2,4})\s*(kr|sek|kronor|spänn|spann)/i);
+  return match ? Number(match[1]) : null;
+};
+
+const getMarketSegmentFromText = (text, qualification = {}) => {
+  const lower = String(text || '').toLowerCase();
+  if (/företag|business|arbetsgivare|employer/.test(lower)) return 'business';
+  if (/student/.test(lower)) return 'student';
+  if (/senior|pensionär|pensionar/.test(lower)) return 'senior';
+  if (/ungdom|youth/.test(lower)) return 'youth';
+  if (/barn|child/.test(lower)) return 'child';
+  if (/familj|family|delat|shared|samla/.test(lower) || Number(qualification.peopleCount) > 1) return 'family';
+  return 'private';
+};
+
+const buildMarketClaim = ({ message, messages = [], qualification = {}, offerCalculation = null }) => {
+  const recentText = getRecentUserText(message, messages);
+  const lower = recentText.toLowerCase();
+  const latestLower = String(message || '').toLowerCase();
+  const explicitPrice = Number(qualification.exactMonthlyPrice) > 0
+    ? Number(qualification.exactMonthlyPrice)
+    : getAveragePrice(qualification.exactMonthlyPrices || []);
+  const claimedPrice = explicitPrice || null;
+  const explicitDataGb = extractMarketDataGb(recentText);
+  const isUnlimited = /obegränsad|obegransad|fri surf|unlimited/.test(lower) ||
+    (qualification.mobileUsage === 'high' && explicitDataGb === null);
+  const dataGb = isUnlimited
+    ? null
+    : (explicitDataGb ?? (
+      qualification.mobileUsage === 'low'
+        ? 10
+        : qualification.mobileUsage === 'medium'
+          ? 30
+          : qualification.mobileUsage === 'high'
+            ? 100
+            : null
+    ));
+  const segment = getMarketSegmentFromText(recentText, qualification);
+  const firstOperator = qualification.operators?.[0] || null;
+  const operatorId = firstOperator ? OPERATOR_ID_BY_NAME[firstOperator] : null;
+  const marketSignal = /telia|tele2|telenor|tre|halebop|operatör|operator|pris|price|betalar|pay|kostar|kr|sek|kronor|spänn|spann|gb|gig|surf|data|obegränsad|obegransad|unlimited|familj|family|student|senior|ungdom|youth|barn|child|kampanj|campaign|arbetsgivare|employer|winback|behållet|retained|paket|bundle|rabatt|discount/.test(lower);
+  const latestMarketSignal = /pris|price|betalar|pay|kostar|kr|sek|kronor|spänn|spann|gb|gig|surf|data|obegränsad|obegransad|unlimited|familj|family|student|senior|ungdom|youth|barn|child|kampanj|campaign|arbetsgivare|employer|winback|behållet|retained|paket|bundle|rabatt|discount/.test(latestLower);
+  const hasClaim = Boolean(claimedPrice && marketSignal && (latestMarketSignal || qualification.readyForOffer) && (isUnlimited || dataGb !== null || segment !== 'private'));
+
+  if (!hasClaim) return null;
+
+  return {
+    claimedPrice,
+    dataGb,
+    isUnlimited,
+    segment,
+    operatorId,
+    isCampaignPrice: /kampanj|campaign|intro|första|first/.test(lower),
+    campaignMonths: extractCampaignMonths(recentText),
+    normalPriceAfterCampaign: extractNormalPriceAfterCampaign(recentText),
+    familyBundle: segment === 'family',
+    sharedPlan: /delat|shared/.test(lower),
+    studentDiscount: /student/.test(lower),
+    seniorDiscount: /senior|pensionär|pensionar/.test(lower),
+    youthDiscount: /ungdom|youth/.test(lower),
+    childPlan: /barn|child/.test(lower),
+    employerPaid: /arbetsgivare|jobbet betalar|employer|work pays|company pays/.test(lower),
+    oldRetainedContract: /gammalt|behållet|behallet|retained|old contract/.test(lower),
+    bundledDiscount: /paket|bundle|bredband.*mobil|mobil.*bredband/.test(lower),
+    winbackOffer: /winback|stanna kvar|retention|räddningserbjudande/.test(lower),
+    canDealettBeat: offerCalculation?.validOfferAvailable === true
+      ? true
+      : offerCalculation?.readyForOffer === true
+        ? false
+        : undefined,
+  };
+};
+
+const applyMarketIntelligenceGate = ({ intent, toolResult, marketClaim }) => {
+  if (!['mobile_offer', 'family_offer'].includes(intent) || !marketClaim) return toolResult;
+
+  const classification = classifyCustomerClaim(marketClaim);
+  if (classification.status === 'realistic') {
+    return {
+      ...toolResult,
+      marketClaim,
+      marketClassification: classification,
+    };
+  }
+
+  return {
+    type: 'market_intelligence',
+    status: classification.status,
+    marketClaim,
+    marketClassification: classification,
+    originalToolResult: toolResult,
+    offerCalculation: toolResult.offerCalculation,
+    rule: 'Market intelligence must be checked before recommending an offer.',
+  };
 };
 
 const tokenize = (value) => String(value || '')
@@ -531,6 +670,10 @@ const detectIntent = ({ message, messages = [], page = {}, qualification = {} })
   if (
     hasQualification &&
     /telia|tele2|telenor|tre|halebop|operatör|operator|no contract|ingen bindningstid|månader kvar|months? left|social|stream|wifi|surf|kr|sek|kronor|spänn|spann/i.test(text)
+  ) return 'mobile_offer';
+  if (
+    hasQualification &&
+    /förklara|rekommendation|kalkyl|varför|bättre|explain|recommendation|calculation|why|details|worth/i.test(text)
   ) return 'mobile_offer';
   if (coverageContextActive && /tre|telia|tele2|telenor|halebop/i.test(text)) return 'coverage';
   if (isReluctantMessage(text)) return 'not_interested';
@@ -887,6 +1030,35 @@ const buildMissingInfoReply = ({ nextField, isEnglish, message, qualification })
   return labels[nextField] || (isEnglish ? 'I need one more detail to compare.' : 'Jag behöver en uppgift till för att jämföra.');
 };
 
+const buildMarketIntelligenceReply = ({ toolResult, isEnglish }) => {
+  const classification = toolResult?.marketClassification || {};
+  const firstQuestion = Array.isArray(classification.nextQuestions) && classification.nextQuestions.length
+    ? classification.nextQuestions[0]
+    : 'Är priset ett kampanjpris, familjepris, rabatt, arbetsgivarbetalt eller winback-erbjudande?';
+
+  if (classification.status === 'possible_needs_clarification') {
+    return isEnglish
+      ? 'That price may be possible, but I need one detail before comparing fairly: is it a campaign, family/shared plan, student/senior/youth discount, employer-paid plan or winback offer?'
+      : `${classification.recommendedResponse || 'Det kan vara möjligt, men jag behöver ett förtydligande innan jag jämför.'} ${firstQuestion}`;
+  }
+
+  if (classification.status === 'suspicious_low') {
+    return isEnglish
+      ? 'That is unusually low compared with normal market levels. I am not saying it is wrong, but before recommending anything I need to know if it is a campaign, family/shared price, discount, employer-paid plan or winback offer.'
+      : 'Det är ovanligt lågt jämfört med normal marknadsnivå. Jag säger inte att det är fel, men innan jag rekommenderar något behöver jag veta om det är kampanj, familjepris, rabatt, arbetsgivare eller winback.';
+  }
+
+  if (classification.status === 'probably_not_sellable') {
+    return isEnglish
+      ? 'If that current deal is correct, it is probably already very strong. Dealett should not pressure you to switch unless the total calculation is clearly better.'
+      : 'Om det nuvarande avtalet stämmer är det troligen redan väldigt starkt. Dealett ska inte pressa fram ett byte om totalen inte tydligt blir bättre.';
+  }
+
+  return isEnglish
+    ? 'I do not want to give a firm recommendation yet because the market comparison needs one more detail. Is the price ordinary, campaign-based, discounted, shared with family, employer-paid or a winback offer?'
+    : 'Jag vill inte ge en fast rekommendation än eftersom marknadsjämförelsen behöver en uppgift till. Är priset ordinarie, kampanj, rabatt, familjedelat, arbetsgivarbetalt eller winback?';
+};
+
 const fallbackReply = ({ intent, language, message, qualification, toolResult }) => {
   const isEnglish = language === 'en';
   if (intent === 'greeting') {
@@ -924,6 +1096,9 @@ const fallbackReply = ({ intent, language, message, qualification, toolResult })
     return isEnglish
       ? 'I am here with you. When you are ready, tell me if you want help with an offer, existing subscription, bill, coverage, broadband, or the cart.'
       : 'Jag är med dig. När du vill kan du säga om du behöver hjälp med erbjudande, befintligt abonnemang, faktura, täckning, bredband eller varukorg.';
+  }
+  if (toolResult?.type === 'market_intelligence') {
+    return buildMarketIntelligenceReply({ toolResult, isEnglish });
   }
   if (intent === 'support') {
     const selected = toolResult?.selectedCartItem
@@ -1131,6 +1306,7 @@ const buildPrompt = ({ language, intent, message, messages, qualification, toolR
 const shouldUseDeterministicReply = ({ intent, toolResult }) => {
   if (['outside_scope', 'offer_discovery', 'browsing', 'not_interested', 'clarify_number'].includes(intent)) return true;
   return [
+    'market_intelligence',
     'qualification',
     'offer_calculator',
     'cart',
@@ -1186,12 +1362,25 @@ const createChatCompletion = async ({ message, messages, language = 'sv', page =
     page,
     qualification: nextQualification,
   });
-  const toolResult = buildToolResult({
+  const initialToolResult = buildToolResult({
     intent,
     qualification: nextQualification,
     cart,
   });
-  const offerCalculation = toolResult.offerCalculation || emptyOfferCalculation(nextQualification);
+  const marketClaim = buildMarketClaim({
+    message: latestMessage,
+    messages,
+    qualification: nextQualification,
+    offerCalculation: initialToolResult.offerCalculation || null,
+  });
+  const toolResult = applyMarketIntelligenceGate({
+    intent,
+    toolResult: initialToolResult,
+    marketClaim,
+  });
+  const offerCalculation = toolResult.type === 'market_intelligence'
+    ? emptyOfferCalculation(nextQualification)
+    : (toolResult.offerCalculation || emptyOfferCalculation(nextQualification));
   const facts = retrieveKnowledge({
     message: latestMessage,
     intent,
@@ -1218,6 +1407,8 @@ const createChatCompletion = async ({ message, messages, language = 'sv', page =
     reply,
     qualification: nextQualification,
     offerCalculation,
+    marketClaim: toolResult.marketClaim || null,
+    marketClassification: toolResult.marketClassification || null,
     suggestions,
     intent,
   };

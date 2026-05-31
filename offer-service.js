@@ -70,6 +70,9 @@ const getPlanDataLabel = (plan = {}) => {
   return plan.title || 'Mobilabonnemang';
 };
 
+const isMobilePlan = (plan = {}) => ['mobil', 'mobile_subscription'].includes(plan.category);
+const isRuntimeSellablePlan = (plan = {}) => plan.runtimeSellable !== false;
+
 const calculateBroadbandReward = (price) => {
   if (price < 299) return 1000;
   if (price < 399) return 2000;
@@ -93,7 +96,7 @@ const getMobileOperatorOffers = (operator) => {
   }
 
   const operatorPlans = plans
-    .filter((plan) => plan.category === 'mobil' && !plan.isFamilyPlan && plan.operator === operator)
+    .filter((plan) => isMobilePlan(plan) && isRuntimeSellablePlan(plan) && !plan.isFamilyPlan && plan.operator === operator)
     .sort((left, right) => (left.dataAmount || 0) - (right.dataAmount || 0))
     .map((plan) => ({
       ...plan,
@@ -103,7 +106,8 @@ const getMobileOperatorOffers = (operator) => {
     }));
 
   const addonPlan = plans.find((plan) =>
-    plan.category === 'mobil' &&
+    isMobilePlan(plan) &&
+    isRuntimeSellablePlan(plan) &&
     plan.isFamilyPlan &&
     plan.familyPriceType === 'addon' &&
     plan.operator === operator
@@ -143,7 +147,7 @@ const normalizeRewards = (rewards, expectedTotal) => {
 
 const buildMobileCartItem = ({ planId, addonPlanId, rewards, answers = {} }) => {
   const plans = getPlans();
-  const plan = plans.find((item) => item.id === planId && item.category === 'mobil' && !item.isFamilyPlan);
+  const plan = plans.find((item) => item.id === planId && isMobilePlan(item) && isRuntimeSellablePlan(item) && !item.isFamilyPlan);
 
   if (!plan) {
     const error = new Error('Unknown mobile plan');
@@ -156,6 +160,7 @@ const buildMobileCartItem = ({ planId, addonPlanId, rewards, answers = {} }) => 
     ? plans.find((item) =>
       item.id === addonPlanId &&
       item.operator === plan.operator &&
+      isRuntimeSellablePlan(item) &&
       item.isFamilyPlan &&
       item.familyPriceType === 'addon'
     )
@@ -307,6 +312,7 @@ const enrichPlanForRecommendation = (plan, allPlans, state) => {
   if (persons > 1) {
     const addon = allPlans.find((candidate) =>
       candidate.operator === plan.operator &&
+      isRuntimeSellablePlan(candidate) &&
       candidate.isFamilyPlan === true &&
       candidate.familyPriceType === 'addon'
     );
@@ -336,7 +342,7 @@ const scorePlan = (plan, state, currentOperators) => {
 
 const getMobileRecommendations = (state = {}) => {
   const allPlans = getPlans();
-  const basePlans = allPlans.filter((plan) => plan.category === 'mobil' && !plan.isFamilyPlan);
+  const basePlans = allPlans.filter((plan) => isMobilePlan(plan) && isRuntimeSellablePlan(plan) && !plan.isFamilyPlan);
   const currentOperators = new Set(
     (state.operators || [])
       .filter(Boolean)

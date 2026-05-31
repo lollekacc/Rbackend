@@ -24,6 +24,9 @@ const tierOrder = {
   high: 3,
 };
 
+const isMobilePlan = (plan = {}) => ['mobil', 'mobile_subscription'].includes(plan.category);
+const isRuntimeSellablePlan = (plan = {}) => plan.runtimeSellable !== false;
+
 const roundMoney = (value) => Math.round((Number(value) || 0) * 100) / 100;
 
 const monthsBetween = (fromDate, toDate) => {
@@ -98,6 +101,7 @@ const planMatchesUsage = (plan, usageTier) => {
 
 const getAddonForOperator = (operator, plans) => plans.find((plan) =>
   plan.operator === operator &&
+  isRuntimeSellablePlan(plan) &&
   plan.isFamilyPlan === true &&
   plan.familyPriceType === 'addon'
 ) || null;
@@ -209,7 +213,8 @@ const calculateOfferOptions = (qualification = {}, options = {}) => {
   const hasExactCurrentPrices = Number(qualification.exactMonthlyPrice) > 0 ||
     (Array.isArray(qualification.exactMonthlyPrices) && qualification.exactMonthlyPrices.length >= peopleCount);
   const basePlans = plans.filter((plan) =>
-    plan.category === 'mobil' &&
+    isMobilePlan(plan) &&
+    isRuntimeSellablePlan(plan) &&
     !plan.isFamilyPlan &&
     planMatchesUsage(plan, qualification.mobileUsage)
   );
