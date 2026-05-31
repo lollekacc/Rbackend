@@ -1,0 +1,21 @@
+{
+  "purpose": "Simple qualification path for 5G broadband/fiber offers.",
+  "requiredBeforeShowingBroadbandOffers": [
+    "Customer should use the address search or coverage map to check location context.",
+    "If customer asks in chat, guide them to enter address on the 5G broadband page or open the coverage map."
+  ],
+  "questions": [
+    {
+      "id": "addressOrMap",
+      "questionSv": "Vill du skriva in adressen på 5G-bredbandssidan eller öppna täckningskartan?",
+      "questionEn": "Do you want to enter your address on the 5G broadband page or open the coverage map?",
+      "buttonExamples": ["Öppna 5G-bredband", "Öppna täckningskarta"]
+    }
+  ],
+  "rules": [
+    "Do not ask many broadband questions in chat.",
+    "For broadband, the main path is to send the customer to the 5G broadband page, enter address or open map, then show offers.",
+    "If customer asks generally, explain available 5G/fiber offers from 5Gbredband.json and mention 24 months binding time and gift card.",
+    "Do not promise exact availability until customer checks address/map."
+  ]
+}

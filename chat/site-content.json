@@ -1,0 +1,312 @@
+{
+  "purpose": "Customer-facing knowledge extracted and summarized from Dealett website pages. Use this to explain page text, section names, calls to action, and what Dealett means by common terms.",
+  "interpretationRules": [
+    "When a customer asks 'what do you mean by...' or asks about a page phrase, find the closest keyTerm or page section and explain it in simple customer language.",
+    "If the phrase appears in multiple places, answer with the meaning that best matches the current page first.",
+    "Do not quote long website text. Explain the meaning and the next customer action.",
+    "If a page section is informational, do not turn it into a promise. Use cautious wording for coverage, availability, prices, rewards, and savings."
+  ],
+  "keyTerms": [
+    {
+      "term": "presentkort",
+      "synonyms": ["gift card", "belöning", "förmån", "reward"],
+      "meaningSv": "Ett presentkort är en extra förmån kunden får när de väljer ett abonnemang eller bredband via Dealett. Värdet beror på erbjudandet och visas i jämförelsen eller varukorgen.",
+      "meaningEn": "A gift card is an extra benefit customers receive when choosing a subscription or broadband offer through Dealett. The value depends on the offer and is shown in the comparison or cart.",
+      "nextAction": "Välj ett erbjudande och fördela presentkortet innan du går vidare till varukorgen."
+    },
+    {
+      "term": "personlig rådgivning",
+      "synonyms": ["AI-rådgivning", "rådgivare", "assistant", "guide"],
+      "meaningSv": "Dealett använder frågor och AI-stöd för att förstå kundens behov och hitta ett abonnemang som passar bättre.",
+      "meaningEn": "Dealett uses guided questions and AI support to understand customer needs and find a better-fitting subscription.",
+      "nextAction": "Svara på frågorna i chatten eller quizet så kan Dealett jämföra alternativen."
+    },
+    {
+      "term": "rätt prisplan",
+      "synonyms": ["prisplan", "bästa pris", "billigare abonnemang"],
+      "meaningSv": "Rätt prisplan betyder inte alltid lägsta pris, utan bästa matchning mellan behov, surf, pris, bindningstid, presentkort och total kostnad.",
+      "meaningEn": "The right price plan is not always the cheapest plan; it is the best match between need, data, price, contract period, gift card, and total cost.",
+      "nextAction": "Ange antal abonnemang, dagens operatör, bindningstid, användning och dagens pris."
+    },
+    {
+      "term": "täckning & nät",
+      "synonyms": ["täckning", "coverage", "nät", "coverage map"],
+      "meaningSv": "Täckning & nät är Dealetts visuella jämförelse av operatörernas nät. Informationen är en uppskattning och ska användas som vägledning, inte som garanti.",
+      "meaningEn": "Coverage and network is Dealett's visual comparison of operators' networks. It is an estimate for guidance, not a guarantee.",
+      "nextAction": "Öppna täckningskartan eller 5G-bredbandssidan och sök adress/plats."
+    },
+    {
+      "term": "bindningstid",
+      "synonyms": ["contract period", "binding", "kvar", "upphör"],
+      "meaningSv": "Bindningstid är tiden kvar på nuvarande eller nytt abonnemangs avtal. Dealett behöver veta när din nuvarande bindningstid går ut för att räkna eventuell dubbelkostnad.",
+      "meaningEn": "Contract period is the remaining time on a current or new subscription. Dealett needs the current end date to estimate possible overlap cost.",
+      "nextAction": "Ange ingen bindningstid, vet inte, antal månader kvar eller datum."
+    },
+    {
+      "term": "nummerflytt",
+      "synonyms": ["flytta nummer", "transfer number", "portering"],
+      "meaningSv": "Nummerflytt betyder att kunden vill ta med sitt befintliga mobilnummer till det nya abonnemanget. Det hanteras i varukorgen, inte i chatten.",
+      "meaningEn": "Number transfer means keeping an existing mobile number with the new subscription. It is handled in the cart, not in chat.",
+      "nextAction": "Gå till varukorgen när du har valt erbjudande."
+    },
+    {
+      "term": "startdatum",
+      "synonyms": ["start date", "börja abonnemanget", "snarast"],
+      "meaningSv": "Startdatum är när kunden vill att abonnemanget ska börja. Det väljs i varukorgen efter att erbjudandet är valt.",
+      "meaningEn": "Start date is when the customer wants the subscription to begin. It is selected in the cart after choosing an offer.",
+      "nextAction": "Välj erbjudande och fortsätt till varukorgen."
+    }
+  ],
+  "pages": [
+    {
+      "path": "index.html",
+      "title": "Bättre deals, helt enkelt.",
+      "purposeSv": "Startsidan presenterar Dealetts löfte: personlig rådgivning, rätt prisplan och presentkort. Den innehåller behovsanalys/quiz, exempelpaket, presentkort och täckningsjämförelse.",
+      "purposeEn": "The home page presents Dealett's promise: personal guidance, the right price plan, and a gift card. It includes needs analysis, package examples, gift cards, and coverage comparison.",
+      "sections": [
+        {
+          "id": "hero",
+          "heading": "Få Personlig rådgivning / Få rätt prisplan / Få ett presentkort",
+          "meaningSv": "Dealett hjälper kunden förstå sitt behov, hitta ett bättre abonnemang och få ett presentkort när kunden går vidare via Dealett.",
+          "customerAction": "Starta behovsanalysen eller chatta med Dealett assistant."
+        },
+        {
+          "id": "needs-quiz",
+          "heading": "Vi använder svaren för att hitta rätt abonnemang",
+          "meaningSv": "Quizet samlar antal abonnemang, operatörer, bindningstid, mobilanvändning och prisnivå så att Dealett kan jämföra erbjudanden.",
+          "customerAction": "Svara på frågorna för att få rekommenderade abonnemang."
+        },
+        {
+          "id": "result",
+          "heading": "Vi hittade dina bästa alternativ",
+          "meaningSv": "Resultatet visar de alternativ som bäst matchar kundens svar utifrån pris, surf och behov.",
+          "customerAction": "Välj ett alternativ och gå vidare till varukorgen."
+        },
+        {
+          "id": "provider-packages",
+          "heading": "Abonnemangspaket",
+          "meaningSv": "Exempelpaketen visar familje-/paketlösningar från operatörer Dealett arbetar med.",
+          "customerAction": "Välj paket eller låt chatten räkna fram ett mer anpassat erbjudande."
+        },
+        {
+          "id": "gift-card",
+          "heading": "Vi ger presentkort på varje köp",
+          "meaningSv": "Kunden kan få presentkort kopplat till sitt valda abonnemang. Det är en del av Dealetts erbjudande.",
+          "customerAction": "Välj erbjudande och presentkortsfördelning innan varukorgen."
+        },
+        {
+          "id": "coverage-preview",
+          "heading": "Täckning & nät",
+          "meaningSv": "Här kan kunden visuellt jämföra operatörers nät och täckning. Det är en uppskattning, inte en garanti.",
+          "customerAction": "Välj operatör eller sök plats i kartan."
+        }
+      ]
+    },
+    {
+      "path": "mobilabonnemang.html",
+      "title": "Mobilabonnemang",
+      "purposeSv": "Sidan låter kunden välja surfmängd och operatör för mobilabonnemang och sedan välja presentkort.",
+      "purposeEn": "The page lets customers choose data amount and operator for mobile subscriptions, then choose gift card allocation.",
+      "sections": [
+        {
+          "id": "offers",
+          "heading": "Välj surfmängd och operatör",
+          "meaningSv": "Kunden jämför mobilabonnemang efter operatör, surf, pris och presentkort.",
+          "customerAction": "Välj abonnemang eller låt chatten kvalificera behovet först."
+        },
+        {
+          "id": "reward",
+          "heading": "Välj presentkort",
+          "meaningSv": "Kunden fördelar presentkortets värde innan abonnemanget läggs i varukorgen.",
+          "customerAction": "Fördela hela beloppet och fortsätt till varukorgen."
+        }
+      ]
+    },
+    {
+      "path": "familjabonnemang.html",
+      "title": "Familjabonnemang",
+      "purposeSv": "Sidan hjälper flera personer i samma hushåll/grupp att jämföra familjepaket och presentkort.",
+      "purposeEn": "The page helps multiple people in a household/group compare family plans and gift cards.",
+      "sections": [
+        {
+          "id": "family-offers",
+          "heading": "Välj familjepaket och operatör",
+          "meaningSv": "Familjepaket samlar flera abonnemang och kan ge bättre totalpris per person.",
+          "customerAction": "Ange antal abonnemang och nuvarande operatör/bindningstid för varje person."
+        },
+        {
+          "id": "family-reward",
+          "heading": "Välj presentkort",
+          "meaningSv": "Presentkortet kopplas till det valda familjepaketet och fördelas innan varukorgen.",
+          "customerAction": "Fördela belöningen och lägg paketet i varukorgen."
+        }
+      ]
+    },
+    {
+      "path": "5g-bredband.html",
+      "title": "5G-Bredband",
+      "purposeSv": "Sidan jämför 5G-bredband och fiber utifrån adress/plats, hastighet, pris, bindningstid, TV-kanaler och presentkort.",
+      "purposeEn": "The page compares 5G broadband and fiber by address/location, speed, price, contract period, TV channels, and gift card.",
+      "sections": [
+        {
+          "id": "address-search",
+          "heading": "Se vad som passar där du bor",
+          "meaningSv": "Kunden söker adress eller stad för att få mer relevant bredbandsjämförelse.",
+          "customerAction": "Skriv adress/stad eller öppna täckningskartan."
+        },
+        {
+          "id": "broadband-results",
+          "heading": "Tillgängliga 5G-bredband",
+          "meaningSv": "Resultaten visar bredbandserbjudanden med hastighet, pris, bindningstid, TV-kanaler och presentkort.",
+          "customerAction": "Filtrera teknik/hastighet, välj erbjudande och lägg i varukorgen."
+        },
+        {
+          "id": "coverage-modal",
+          "heading": "Välj operatör och utforska kartan",
+          "meaningSv": "Kartan hjälper kunden visuellt se ungefärlig täckning per operatör. Den är vägledande.",
+          "customerAction": "Välj operatör och sök adress/plats."
+        }
+      ]
+    },
+    {
+      "path": "jamfor-tackning.html",
+      "title": "Jämför täckning",
+      "purposeSv": "Sidan fokuserar på att jämföra täckningskartor och nät för operatörer.",
+      "purposeEn": "The page focuses on comparing coverage maps and networks for operators.",
+      "sections": [
+        {
+          "id": "coverage-map",
+          "heading": "Bygg en enkel täckningsvy",
+          "meaningSv": "Kunden kan välja operatör, nätfilter och karta för att förstå täckningsläget.",
+          "customerAction": "Välj operatör, sök plats och tolka täckningen som uppskattning."
+        }
+      ]
+    },
+    {
+      "path": "varukorg.html",
+      "title": "Varukorg",
+      "purposeSv": "Varukorgen samlar valt erbjudande, kontaktflöde, nummerflytt, startdatum och signering.",
+      "purposeEn": "The cart collects selected offer, contact flow, number transfer, start date, and signing.",
+      "sections": [
+        {
+          "id": "order-summary",
+          "heading": "Din beställning",
+          "meaningSv": "Visar kundens valda abonnemang/bredband, totalpris och presentkort.",
+          "customerAction": "Kontrollera valet innan du fortsätter."
+        },
+        {
+          "id": "delivery-confirmation",
+          "heading": "Leverans och bekräftelse",
+          "meaningSv": "Här fyller kunden i kontaktuppgifter i den befintliga köpprocessen.",
+          "customerAction": "Fyll i formuläret i varukorgen, inte i chatten."
+        },
+        {
+          "id": "number-transfer",
+          "heading": "Fyll i numren som ska flyttas",
+          "meaningSv": "Här anger kunden mobilnummer som ska flyttas till nya abonnemanget.",
+          "customerAction": "Fyll i numren när varukorgen ber om det."
+        },
+        {
+          "id": "start-date",
+          "heading": "När vill du börja abonnemanget?",
+          "meaningSv": "Kunden väljer när abonnemanget ska starta.",
+          "customerAction": "Välj startdatum och fortsätt till signering."
+        }
+      ]
+    },
+    {
+      "path": "kontakt.html",
+      "title": "Kundservice",
+      "purposeSv": "Sidan förklarar support och vanliga frågor samt innehåller kontaktformulär.",
+      "purposeEn": "The page explains support and FAQs and includes a contact form.",
+      "sections": [
+        {
+          "id": "faq",
+          "heading": "Vanliga frågor",
+          "meaningSv": "FAQ svarar på grundläggande frågor om abonnemangsval, familjemedlemmar, kampanjer och trygg hantering.",
+          "customerAction": "Läs FAQ eller fråga chatten om samma ämnen."
+        },
+        {
+          "id": "contact-form",
+          "heading": "Skicka ett meddelande",
+          "meaningSv": "Kontaktformuläret används när kunden vill skicka ett supportärende.",
+          "customerAction": "Använd formuläret för personliga supportärenden."
+        }
+      ]
+    },
+    {
+      "path": "om-oss.html",
+      "title": "Om oss",
+      "purposeSv": "Sidan förklarar Dealetts idé: göra abonnemangsval enklare, smartare och mer transparenta.",
+      "purposeEn": "The page explains Dealett's idea: making subscription choices simpler, smarter, and more transparent.",
+      "sections": [
+        {
+          "id": "mission",
+          "heading": "Att göra abonnemangsval enklare, smartare och mer transparenta",
+          "meaningSv": "Dealett vill minska förvirring och hjälpa kunder fatta bättre abonnemangsbeslut.",
+          "customerAction": "Använd jämförelse, quiz eller chatten för vägledning."
+        },
+        {
+          "id": "values",
+          "heading": "Tydlighet, transparens och gemenskap",
+          "meaningSv": "Dealett vill visa val tydligt, förklara jämförelser och bygga förtroende.",
+          "customerAction": "Fråga chatten om något känns oklart."
+        }
+      ]
+    },
+    {
+      "path": "account.html",
+      "title": "Mina sidor",
+      "purposeSv": "Mina sidor visar kundens kontoöversikt, aktiv plan, vald förmån och genvägar.",
+      "purposeEn": "My pages shows account overview, active plan, selected benefit, and shortcuts.",
+      "sections": [
+        {
+          "id": "active-plan",
+          "heading": "Din aktiva plan",
+          "meaningSv": "Visar abonnemanget som är kopplat till kontot eller det som valts i varukorgen/demo.",
+          "customerAction": "Logga in och granska planstatus."
+        },
+        {
+          "id": "selected-benefit",
+          "heading": "Din valda förmån",
+          "meaningSv": "Visar presentkort/förmån som kopplats till kundens val.",
+          "customerAction": "Kontrollera att förmånen stämmer med valt erbjudande."
+        }
+      ]
+    },
+    {
+      "path": "foretag.html",
+      "title": "Företag",
+      "purposeSv": "Företagssidan visar företagsabonnemang och hjälper företag jämföra operatörer och planer.",
+      "purposeEn": "The business page shows business subscriptions and helps companies compare operators and plans.",
+      "sections": [
+        {
+          "id": "business-size",
+          "heading": "Hur stort är företaget?",
+          "meaningSv": "Storlek hjälper kunden tänka kring hur många företagsabonnemang som behövs.",
+          "customerAction": "Välj företagsstorlek och jämför planer."
+        },
+        {
+          "id": "business-plans",
+          "heading": "Välj operatör och plan",
+          "meaningSv": "Visar olika företagsplaner från operatörer med surf/prisnivåer.",
+          "customerAction": "Jämför planerna eller kontakta support för företagsbehov."
+        }
+      ]
+    },
+    {
+      "path": "login.html",
+      "title": "Logga in",
+      "purposeSv": "Inloggningssidan används för demo-/kundkonto och Mina sidor.",
+      "purposeEn": "The login page is used for demo/customer account and My pages.",
+      "sections": [
+        {
+          "id": "login",
+          "heading": "Logga in",
+          "meaningSv": "Kunden kan logga in för att se kontoöversikt. Nuvarande flöde är demoanpassat.",
+          "customerAction": "Logga in för Mina sidor eller fortsätt jämföra utan inloggning."
+        }
+      ]
+    }
+  ]
+}

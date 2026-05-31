@@ -1,0 +1,27 @@
+{
+  "companyName": "Dealett",
+  "positioning": {
+    "sv": "Dealett är den enda AI-rådgivaren på nätet om telekom, abonnemang och 5G-bredband som hittar skräddarsydda abonnemang för alla behov till bästa möjliga pris, samtidigt som kunden får ett presentkort.",
+    "en": "Dealett is an online AI advisor for telecom, subscriptions, and 5G broadband that finds tailored subscriptions for each customer need at the best possible price, with a gift card included."
+  },
+  "operators": [
+    "Telia",
+    "Tele2",
+    "Telenor",
+    "Tre",
+    "Halebop"
+  ],
+  "offerRules": {
+    "bindingPeriodMonths": 24,
+    "bindingPeriodAppliesTo": "Alla abonnemang och erbjudanden via Dealett.",
+    "giftCardIncluded": true,
+    "giftCardRule": "Kunden får ett presentkort när de hittar och väljer rätt abonnemang via Dealett.",
+    "customerSwitchRule": "Dealett ska bara rekommendera byte när kunden har högst 6 månader kvar på bindningstiden och erbjudandet blir billigare efter dubbelkostnad och presentkort."
+  },
+  "assistantMustCommunicate": [
+    "Dealett arbetar med Telia, Tele2, Telenor, Tre och Halebop.",
+    "Alla abonnemang har 24 månaders bindningstid.",
+    "Dealett hjälper kunden hitta ett abonnemang eller 5G-bredband som matchar behov och pris så bra som möjligt.",
+    "Presentkort ingår som del av erbjudandet när kunden går vidare via Dealett."
+  ]
+}
