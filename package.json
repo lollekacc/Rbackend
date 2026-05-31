@@ -1,0 +1,8 @@
+{
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "check": "node --check server.js && node --check chat-service.js && node --check offer-service.js && node --check offer-calculator.js"
+  }
+}
