@@ -702,6 +702,27 @@ const hasTrustSignal = (message) => (
     .test(String(message || ''))
 );
 
+const getSoftGuidanceType = (message) => {
+  const text = String(message || '').toLowerCase();
+  if (/jag vill ha bästa,?\s*inte billigast|vill ha bästa.*inte billigast|bästa.*inte billigast|basta.*inte billigast|best.*not cheapest/.test(text)) return 'best_not_cheapest';
+  if (/ställ inte massa frågor|stall inte massa fragor|fråga inte|fraga inte|bara säg|bara sag|dont ask|don't ask/.test(text)) return 'no_patience';
+  if (/säkert val|sakert val|tryggt val|safe choice/.test(text)) return 'safe_choice';
+  if (/orkar inte.*abonnemang|alla luras|känns.*luras|kanns.*luras|frustrerad|jobbigt.*abonnemang/.test(text)) return 'emotional';
+  if (/vet inte vad jag betalar|vet inte.*pris|ingen aning.*pris|kommer inte ihåg.*pris|kommer inte ihag.*pris/.test(text)) return 'unknown_price';
+  if (/runt\s*\d{2,4}|cirka\s*\d{2,4}|typ\s*\d{2,4}|ungefär\s*\d{2,4}|ungefar\s*\d{2,4}|\d{2,4}\s*nånting|\d{2,4}\s*nanting/.test(text)) return 'approximate_price';
+  if (/ingen aning.*surf|vet inte.*surf|vet inte.*gb|hur mycket surf jag använder|hur mycket surf jag anvander/.test(text)) return 'unknown_data';
+  if (/bryr mig inte om gb|vill bara att det ska funka|ska bara funka|något som funkar|nat som funkar|something that works/.test(text)) return 'reliability_first';
+  if (/till mitt barn|till.*barn|barn.*abonnemang|child.*plan/.test(text)) return 'child_plan';
+  if (/(min\s+)?pappa.*(ringa|bankid)|(min\s+)?mamma.*(ringa|bankid)|senior.*(ringa|bankid)|äldre.*(ringa|bankid|abonnemang)|aldre.*(ringa|bankid|abonnemang)/.test(text)) return 'elder_parent';
+  if (/flera hemma.*rörigt|flera hemma.*rorigt|allt är rörigt|allt ar rorigt|family.*messy/.test(text)) return 'family_unclear';
+  if (/internet hemma.*mobil|mobil.*internet hemma|hemma.*mobil.*samma|mobil.*bredband.*samma|bredband.*mobil.*samma/.test(text)) return 'mobile_broadband_mix';
+  if (/bor i\s+(jakobsberg|barkarby)|bor nära\s+(jakobsberg|barkarby)|bor nara\s+(jakobsberg|barkarby)|nära barkarby|nara barkarby|nära jakobsberg|nara jakobsberg/.test(text)) return 'coverage_area';
+  if (/hemma.*dålig täckning|hemma.*dalig tackning|ute funkar|inomhus.*dålig|inomhus.*dalig|har tele2.*suger hemma|tele2.*suger hemma|suger hemma/.test(text)) return 'coverage_indoor';
+  if (/kompis.*telia.*funkar|telia.*funkar.*hos mig|friend.*telia.*works/.test(text)) return 'friend_coverage_signal';
+  if (/samma abonnemang.*många år|samma abonnemang.*manga ar|haft.*abonnemang.*många år|haft.*abonnemang.*manga ar|old plan/.test(text)) return 'old_plan';
+  return null;
+};
+
 const hasMobileConversationContext = (text, qualification = {}) => Boolean(
   qualification.peopleCount ||
   qualification.mobileUsage ||
@@ -793,6 +814,7 @@ const detectIntent = ({ message, messages = [], page = {}, qualification = {} })
 
   if (hasTrustSignal(text)) return 'dealett_trust';
   if (hasFakeConditionSignal(text)) return 'fake_condition';
+  if (getSoftGuidanceType(text)) return 'soft_guidance';
   if (/vet inte vad jag har|vet inte operatör|vet inte operator|vet inte pris|ingen aning.*pris|bara säg vad som är bäst|bara sag vad som ar bast/i.test(text)) return 'unknown_customer';
   if (/jobbet betalar|arbetsgivare|employer.*pay|work pays|company pays/i.test(text)) return 'mobile_offer';
   if (hasCheapestOnlyIntent(text) && !hasMobileConversationContext(fullUserContext, qualification)) return 'cheapest_start';
@@ -1271,6 +1293,83 @@ const buildMarketIntelligenceReply = ({ toolResult, isEnglish }) => {
     : `Jag vill inte ge en fast rekommendation än eftersom marknadsjämförelsen behöver en uppgift till.${bindingNote} Är priset ordinarie, kampanj, rabatt, familjedelat, arbetsgivarbetalt eller winback?`;
 };
 
+const buildSoftGuidanceReply = ({ isEnglish, message }) => {
+  const type = getSoftGuidanceType(message);
+  const replies = {
+    best_not_cheapest: {
+      sv: 'Bästa betyder oftast täckning, stabilitet, hastighet, support eller familjevärde, inte bara lägst pris. Vilket av dem är viktigast för dig?',
+      en: 'Best usually means coverage, stability, speed, support or family value, not only the lowest price. Which one matters most to you?',
+    },
+    no_patience: {
+      sv: 'Kort svar: börja med täckning och stabilitet, sedan pris. Är det mobilabonnemang eller bredband du vill jämföra?',
+      en: 'Short answer: start with coverage and stability, then price. Do you want to compare mobile or broadband?',
+    },
+    safe_choice: {
+      sv: 'Ett säkert val är att prioritera stabil täckning, undvika onödig bindning om du är osäker och välja rimlig surf istället för max direkt. Gäller det mobil eller bredband?',
+      en: 'A safe choice is to prioritize stable coverage, avoid unnecessary binding if you are unsure, and choose reasonable data instead of max data immediately. Is this for mobile or broadband?',
+    },
+    emotional: {
+      sv: 'Jag förstår, abonnemang kan kännas frustrerande och rörigt. Vi tar ett lugnt steg utan press: gäller det mobil, bredband eller en faktura?',
+      en: 'I understand, subscriptions can feel frustrating and messy. Let us take one calm step without pressure: is this about mobile, broadband or a bill?',
+    },
+    unknown_price: {
+      sv: 'Ingen fara, ett ungefär räcker för att börja. Ligger det ungefär under 200, 200-350 eller över 350 kr per månad?',
+      en: 'No problem, an approximate range is enough to start. Is it roughly under 200, 200-350 or over 350 SEK per month?',
+    },
+    approximate_price: {
+      sv: 'Runt det priset räcker som start, men jag markerar det som ungefärligt. Vilken operatör har du idag?',
+      en: 'That approximate price is enough to start, and I will treat it as an estimate. Which operator do you use today?',
+    },
+    unknown_data: {
+      sv: 'Ingen fara, vi kan utgå från beteende istället för GB. Tar surfen slut, streamar du mycket, eller är det mest sociala medier, BankID och kartor?',
+      en: 'No problem, we can use behavior instead of exact GB. Does your data run out, do you stream a lot, or is it mostly social media, BankID and maps?',
+    },
+    reliability_first: {
+      sv: 'Då prioriterar vi täckning och stabilitet före GB. Var måste det funka bäst: hemma, på jobbet eller under pendling?',
+      en: 'Then we prioritize coverage and stability before GB. Where must it work best: at home, at work or while commuting?',
+    },
+    child_plan: {
+      sv: 'För barn är ett enkelt och billigt abonnemang med rimlig surfgräns ofta bättre än max surf. Hur gammalt är barnet ungefär?',
+      en: 'For a child, a simple low-cost plan with a reasonable data limit is often better than maximum data. Roughly how old is the child?',
+    },
+    elder_parent: {
+      sv: 'För lite BankID och samtal brukar låg surf och ett enkelt abonnemang räcka, så jag ska inte översälja obegränsad surf. Har han wifi hemma?',
+      en: 'For some BankID and calls, low data and a simple plan usually works, so I should not oversell unlimited data. Does he have Wi-Fi at home?',
+    },
+    family_unclear: {
+      sv: 'Vi förenklar det. Börja med en sak: hur många mobilanvändare är ni hemma?',
+      en: 'Let us simplify it. Start with one thing: how many mobile users are at home?',
+    },
+    mobile_broadband_mix: {
+      sv: 'Mobil och internet hemma jämförs bäst separat, även om de ibland kan paketeras. Vad är mest akut: internet hemma eller mobilabonnemang?',
+      en: 'Mobile and home internet are best compared separately, even if they can sometimes be bundled. What is most urgent: home internet or mobile?',
+    },
+    coverage_area: {
+      sv: 'Jakobsberg/Barkarby-området är en användbar signal, men jag kan inte garantera täckning utan adressnivå. Ska det funka mest hemma inomhus, på jobbet eller under pendling?',
+      en: 'The Jakobsberg/Barkarby area is a useful signal, but I cannot guarantee coverage without an address-level check. Should it work best at home indoors, at work or while commuting?',
+    },
+    coverage_indoor: {
+      sv: 'Om det är dåligt hemma men funkar ute handlar det ofta om inomhustäckning, väggar eller nätet just där. Wifi-samtal kan hjälpa, men vi bör också jämföra annat nät. Vilken operatör har du idag?',
+      en: 'If it is bad at home but works outside, it is often indoor coverage, walls or that network at that exact place. Wi-Fi calling can help, but we should also compare another network. Which operator do you use today?',
+    },
+    friend_coverage_signal: {
+      sv: 'Att en kompis med Telia har bra signal hos dig är en nyttig signal, men inte en garanti eftersom telefon, SIM och inomhusläge kan skilja. Vill du prioritera Telia-nätet i jämförelsen?',
+      en: 'A friend with Telia having good signal at your place is a useful signal, but not a guarantee because phone, SIM and indoor position can differ. Do you want to prioritize the Telia network in the comparison?',
+    },
+    old_plan: {
+      sv: 'Gamla abonnemang kan vara antingen riktigt bra eller onödigt dyra, så det är värt att jämföra mjukt först. Betalar du ungefär under eller över 300 kr i månaden?',
+      en: 'Old plans can be either very good or unnecessarily expensive, so it is worth doing a soft comparison first. Do you pay roughly under or over 300 SEK per month?',
+    },
+  };
+
+  const selected = replies[type] || {
+    sv: 'Jag kan hjälpa även med ungefärliga uppgifter. Vad är viktigast just nu: pris, täckning eller enkelhet?',
+    en: 'I can help even with approximate details. What matters most right now: price, coverage or simplicity?',
+  };
+
+  return isEnglish ? selected.en : selected.sv;
+};
+
 const fallbackReply = ({ intent, language, message, qualification, toolResult }) => {
   const isEnglish = language === 'en';
   if (intent === 'greeting') {
@@ -1292,6 +1391,9 @@ const fallbackReply = ({ intent, language, message, qualification, toolResult })
     return isEnglish
       ? 'I cannot pretend or calculate from fake conditions. Dealett can only compare using the actual operator terms, price, data need and remaining contract time.'
       : 'Jag kan inte låtsas eller räkna på fejkade villkor. Dealett kan bara jämföra med riktiga operatörsvillkor, pris, surfbehov och faktisk bindningstid.';
+  }
+  if (intent === 'soft_guidance') {
+    return buildSoftGuidanceReply({ isEnglish, message });
   }
   if (intent === 'cheapest_start') {
     return isEnglish
@@ -1336,6 +1438,11 @@ const fallbackReply = ({ intent, language, message, qualification, toolResult })
     const selected = toolResult?.selectedCartItem
       ? `${toolResult.selectedCartItem.operator || 'Dealett'} ${toolResult.selectedCartItem.title || 'abonnemang'}`
       : null;
+    if (/fattar inte|min faktura|förstår inte.*faktura|forstar inte.*faktura|invoice.*confus/i.test(message)) {
+      return isEnglish
+        ? 'Invoices can be confusing. Start with the total monthly amount and how many users or services are included, then we can separate subscriptions, add-ons and one-time fees.'
+        : 'Fakturor kan vara röriga. Börja med totalbeloppet per månad och hur många användare eller tjänster som ingår, så kan vi skilja abonnemang, tillval och engångskostnader.';
+    }
     if (/redan kund|befintlig kund|already customer|existing customer/i.test(message)) {
       return isEnglish
         ? 'I understand. Even for existing customers, the chat is not connected to live account data, so invoice dates and contract details must be checked in My pages or support.'
@@ -1536,7 +1643,7 @@ const buildPrompt = ({ language, intent, message, messages, qualification, toolR
 ].join('\n');
 
 const shouldUseDeterministicReply = ({ intent, toolResult }) => {
-  if (['outside_scope', 'offer_discovery', 'browsing', 'not_interested', 'clarify_number', 'dealett_trust', 'fake_condition', 'cheapest_start', 'unknown_customer'].includes(intent)) return true;
+  if (['outside_scope', 'offer_discovery', 'browsing', 'not_interested', 'clarify_number', 'dealett_trust', 'fake_condition', 'soft_guidance', 'cheapest_start', 'unknown_customer'].includes(intent)) return true;
   return [
     'market_intelligence',
     'qualification',
