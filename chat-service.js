@@ -5,6 +5,12 @@ const { calculateOfferOptions } = require('./offer-calculator');
 const { getBroadbandPlans, getPlans } = require('./offer-service');
 const { classifyCustomerClaim } = require('./src/marketIntelligence');
 const { detectConversationStyle } = require('./src/conversationStyle');
+const {
+  buildChatResponse,
+  buildOfferCardsFromOfferCalculation,
+  getEmbeddedWidgetForChatState,
+  getQuickRepliesForChatState,
+} = require('./src/chat-ui-response');
 
 const OPENAI_ENDPOINT = 'https://api.openai.com/v1/responses';
 const DEFAULT_MODEL = 'gpt-4o-mini';
@@ -1370,8 +1376,8 @@ const buildSoftGuidanceReply = ({ isEnglish, message }) => {
       en: 'Mobile and home internet are best compared separately, even if they can sometimes be bundled. What is most urgent: home internet or mobile?',
     },
     coverage_area: {
-      sv: 'Jakobsberg/Barkarby-området är en användbar signal, men jag kan inte garantera täckning utan adressnivå. Ska det funka mest hemma inomhus, på jobbet eller under pendling?',
-      en: 'The Jakobsberg/Barkarby area is a useful signal, but I cannot guarantee coverage without an address-level check. Should it work best at home indoors, at work or while commuting?',
+      sv: 'I Jakobsberg/Barkarby kan täckning skilja mellan gata, hus och inomhusmiljö. Som generell vägledning är det klokt att jämföra nät snarare än bara abonnemangspris. Vi kan börja här i chatten med adress, position eller operatörsjämförelse.',
+      en: 'In the Jakobsberg/Barkarby area, coverage can differ by street, building and indoor environment. As general guidance, compare networks rather than only subscription price. We can start here in chat with address, location or operator comparison.',
     },
     coverage_indoor: {
       sv: 'Om det är dåligt hemma men funkar ute handlar det ofta om inomhustäckning, väggar eller nätet just där. Wifi-samtal kan hjälpa, men vi bör också jämföra annat nät. Vilken operatör har du idag?',
@@ -1430,9 +1436,14 @@ const buildStyleGuidedReply = ({ isEnglish, message, conversationStyle }) => {
 
   if (style === 'comparison') {
     if (/täckning|tackning|coverage|telia|tele2|telenor|tre|halebop/i.test(text)) {
+      if (/jakobsberg|barkarby/i.test(text)) {
+        return isEnglish
+          ? 'In the Jakobsberg/Barkarby area, coverage can differ by street, building and indoor environment. As general guidance, compare networks rather than only subscription price. We can start here in chat with address, location or operator comparison.'
+          : 'I Jakobsberg/Barkarby kan täckning skilja mellan gata, hus och inomhusmiljö. Som generell vägledning är det klokt att jämföra nät snarare än bara abonnemangspris. Vi kan börja här i chatten med adress, position eller operatörsjämförelse.';
+      }
       return isEnglish
-        ? 'As a practical first answer: compare by network where you actually use the phone, especially home indoors and commute. I cannot guarantee coverage from chat, but address-level coverage should decide before price. Which area matters most?'
-        : 'Praktiskt första svar: jämför efter nät där du faktiskt använder mobilen, särskilt hemma inomhus och pendling. Jag kan inte garantera täckning i chatten, men adressnivå bör avgöra före pris. Vilket område är viktigast?';
+        ? 'As a practical first answer: compare by network where you actually use the phone, especially home indoors and commute. I cannot guarantee coverage, but we can start here in chat with address, location or operator comparison.'
+        : 'Praktiskt första svar: jämför efter nät där du faktiskt använder mobilen, särskilt hemma inomhus och pendling. Jag kan inte garantera täckning, men vi kan börja här i chatten med adress, position eller operatörsjämförelse.';
     }
     return isEnglish
       ? 'A fair comparison starts with total monthly cost, data need and binding time. I can give a rough direction first, but exact recommendation needs real terms. What are you comparing: operators, price or coverage?'
@@ -1468,6 +1479,11 @@ const buildStyleGuidedReply = ({ isEnglish, message, conversationStyle }) => {
     ? 'If I must choose with no more information: start with a mid-sized 5G mobile plan around 20-30 GB. It is a safe all-round choice for many without being as expensive as unlimited data. This is a qualified guess, not an exact personal recommendation. Do you want me to keep guessing or make it accurate with one question?'
     : 'Om jag måste välja utan mer info: börja med ett mellanstort 5G-abonnemang runt 20-30 GB. Det är ett tryggt allroundval för många utan att bli lika dyrt som obegränsat. Det är en kvalificerad gissning, inte en exakt personlig rekommendation. Vill du att jag gissar vidare eller gör det träffsäkert med en fråga?';
 };
+
+const wantsFullCoverageMap = (message) => (
+  /full\s*täckningskarta|full\s*tackningskarta|fullskärm|fullskarm|stor karta|större karta|storre karta|karta-sida|kartasida|hel karta|full map|fullscreen|large map|map page|separat karta/i
+    .test(String(message || ''))
+);
 
 const fallbackReply = ({ intent, language, message, qualification, toolResult, conversationStyle }) => {
   const isEnglish = language === 'en';
@@ -1648,29 +1664,34 @@ const fallbackReply = ({ intent, language, message, qualification, toolResult, c
       : 'För 5G-bredband är nästa steg att skriva adress eller öppna täckningskartan. Jag kan visa erbjudanden, men exakt tillgänglighet måste kontrolleras med adress.';
   }
   if (intent === 'coverage') {
+    if (wantsFullCoverageMap(message)) {
+      return isEnglish
+        ? 'Yes, if you want a large map view, the full coverage map page can be useful. We can still start here in chat with address, location or operator comparison first.'
+        : 'Ja, om du vill ha stor kartvy kan hela täckningskartan vara användbar. Vi kan ändå börja här i chatten med adress, position eller operatörsjämförelse först.';
+    }
     if (/karta|map/i.test(message)) {
       return isEnglish
-        ? 'Yes, use the coverage map. It is the right next step when you do not want to share an exact address in chat.'
-        : 'Ja, använd täckningskartan. Det är rätt nästa steg när du inte vill skriva exakt adress i chatten.';
+        ? 'We can start the coverage check here in chat. Coverage still depends on exact address and indoor conditions, so use address, location or operator comparison as a first step.'
+        : 'Vi kan börja täckningskollen här i chatten. Täckning beror fortfarande på exakt adress och inomhusmiljö, så använd adress, position eller operatörsjämförelse som första steg.';
     }
     if (/inte.*adress|exakta adress|do not want.*address|don't want.*address/i.test(message)) {
       return isEnglish
-        ? 'That is fine. You do not need to share the address in chat; use the coverage map or address check on the site so the result stays private and specific.'
-        : 'Det är helt okej. Du behöver inte skriva adressen i chatten; använd täckningskartan eller adresskontrollen på sidan så blir svaret privat och mer exakt.';
+        ? 'That is fine. You do not need to share the exact address in chat. We can start with location or compare operators generally, but exact coverage still depends on address and indoor conditions.'
+        : 'Det är helt okej. Du behöver inte skriva exakt adress i chatten. Vi kan börja med position eller jämföra operatörer generellt, men exakt täckning beror fortfarande på adress och inomhusmiljö.';
     }
     if (/funkar|fungerar|lägenheten|works|work|apartment/i.test(message)) {
       return isEnglish
-        ? 'I cannot know indoor coverage from chat. Buildings can change the signal, so the right check is the coverage map and, when available, an address-based check.'
-        : 'Jag kan inte veta inomhustäckning från chatten. Byggnader kan påverka signalen, så rätt kontroll är täckningskartan och när det finns, adresskontroll.';
+        ? 'I cannot guarantee indoor coverage from chat. Buildings can change the signal a lot, but we can start here with address, location or operator comparison and treat the result as guidance.'
+        : 'Jag kan inte garantera inomhustäckning från chatten. Byggnader kan påverka signalen mycket, men vi kan börja här med adress, position eller operatörsjämförelse och se det som vägledning.';
     }
     if (/vad borde|kontrollera|what should|check/i.test(message)) {
       return isEnglish
-        ? 'Open the coverage map, compare the operator at your area, and avoid ordering until the map/address check looks good for where you will use it most.'
-        : 'Öppna täckningskartan, jämför operatören där du bor och beställ först när karta/adresskontroll ser bra ut för platsen där du använder tjänsten mest.';
+        ? 'Coverage depends on exact address, especially indoors. We can start here in chat: choose address, location or operator comparison, then avoid ordering until the guidance looks good where you use the service most.'
+        : 'Täckning beror på exakt adress, särskilt inomhus. Vi kan börja här i chatten: välj adress, position eller operatörsjämförelse, och beställ först när vägledningen ser bra ut där du använder tjänsten mest.';
     }
     return isEnglish
-      ? 'Coverage depends on the exact area, so I cannot guarantee it from chat. Open the coverage map to compare operators at your address.'
-      : 'Täckning beror på exakt område, så jag kan inte garantera den i chatten. Öppna täckningskartan för att jämföra operatörer på din adress.';
+      ? 'Coverage depends on exact address, especially indoors. We can start here in chat: choose whether you want to enter an address, use location or compare operators.'
+      : 'Täckning beror på exakt adress, särskilt inomhus. Vi kan börja här i chatten: välj om du vill ange adress, använda position eller jämföra operatörer.';
   }
   if (['mobile_offer', 'family_offer'].includes(intent) && toolResult?.status === 'missing_info') {
     return buildMissingInfoReply({
@@ -2028,9 +2049,34 @@ const createChatCompletion = async ({
     language: normalizedLanguage,
     intent,
   });
+  const shouldShowCoverageSelector = intent === 'coverage' ||
+    (intent === 'soft_guidance' && /^coverage_/.test(String(getSoftGuidanceType(contextualMessage) || ''))) ||
+    (intent === 'style_guided' && /täckning|tackning|coverage|nät|nat|bäst täckning|bast tackning/i.test(latestMessage));
+  const embeddedWidget = getEmbeddedWidgetForChatState({
+    intent: shouldShowCoverageSelector ? 'coverage' : intent,
+    language: normalizedLanguage,
+  });
+  const uiResponse = buildChatResponse({
+    message: reply,
+    quickReplies: embeddedWidget
+      ? []
+      : getQuickRepliesForChatState({
+        intent,
+        language: normalizedLanguage,
+        conversationStyle: nextConversationStyle,
+      }),
+    offerCards: buildOfferCardsFromOfferCalculation(offerCalculation, {
+      language: normalizedLanguage,
+    }),
+    embeddedWidget,
+  });
 
   return {
     reply,
+    message: uiResponse.message,
+    quickReplies: uiResponse.quickReplies,
+    offerCards: uiResponse.offerCards,
+    embeddedWidget: uiResponse.embeddedWidget,
     qualification: nextQualification,
     offerCalculation,
     marketClaim: toolResult.marketClaim || null,
