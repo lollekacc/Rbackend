@@ -33,6 +33,12 @@ const getPlansBySegment = (segment) => {
 
 const roundMoney = (value) => Math.round((Number(value) || 0) * 100) / 100;
 
+const hasPositiveNumber = (value) => {
+  if (value === null || value === undefined || value === '') return false;
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0;
+};
+
 const getRangeBucket = ({ dataGb, isUnlimited }) => {
   if (isUnlimited) {
     return marketRules.heuristicMarketRanges.find((range) => range.isUnlimited) || null;
@@ -104,16 +110,16 @@ const baseQuestions = [
 const getClarifyingQuestions = (customerClaim = {}) => {
   const questions = [];
 
-  if (!Number.isFinite(Number(customerClaim.claimedPrice))) {
+  if (!hasPositiveNumber(customerClaim.claimedPrice)) {
     questions.push('Vad betalar du per månad per abonnemang idag?');
   }
   if (!customerClaim.isUnlimited && !Number.isFinite(Number(customerClaim.dataGb))) {
     questions.push('Hur mycket surf ingår per månad, eller är det obegränsad surf?');
   }
-  if (customerClaim.isCampaignPrice && !Number.isFinite(Number(customerClaim.campaignMonths))) {
+  if (customerClaim.isCampaignPrice && !hasPositiveNumber(customerClaim.campaignMonths)) {
     questions.push('Hur många månader gäller kampanjpriset?');
   }
-  if (customerClaim.isCampaignPrice && !Number.isFinite(Number(customerClaim.normalPriceAfterCampaign))) {
+  if (customerClaim.isCampaignPrice && !hasPositiveNumber(customerClaim.normalPriceAfterCampaign)) {
     questions.push('Vad blir ordinarie pris efter kampanjen?');
   }
   if (customerClaim.segment && !marketRules.segments.includes(customerClaim.segment)) {
@@ -135,7 +141,7 @@ const classifyCustomerClaim = (customerClaim = {}) => {
   });
   const nextQuestions = getClarifyingQuestions(customerClaim);
 
-  if (!Number.isFinite(claimedPrice) || claimedPrice <= 0) {
+  if (!Number.isFinite(claimedPrice) || claimedPrice < 0) {
     return {
       status: 'human_review',
       confidence: 0.35,
@@ -145,12 +151,25 @@ const classifyCustomerClaim = (customerClaim = {}) => {
     };
   }
 
-  if (customerClaim.isCampaignPrice && !Number.isFinite(Number(customerClaim.campaignMonths))) {
+  if (claimedPrice === 0) {
+    return {
+      status: 'probably_not_sellable',
+      confidence: 0.9,
+      reason: 'Customer claims a free subscription price, which is an exceptional deal Dealett should not try to beat automatically.',
+      recommendedResponse: 'Det låter som ett extremt starkt undantagsavtal. Då kan det faktiskt vara bättre att behålla det tills vidare.',
+      nextQuestions,
+    };
+  }
+
+  if (
+    customerClaim.isCampaignPrice &&
+    (!hasPositiveNumber(customerClaim.campaignMonths) || !hasPositiveNumber(customerClaim.normalPriceAfterCampaign))
+  ) {
     return {
       status: 'possible_needs_clarification',
       confidence: 0.75,
-      reason: 'Customer gave a campaign price but no campaign length.',
-      recommendedResponse: 'Det kan absolut vara ett kampanjpris. För att jämföra rätt behöver jag veta hur länge priset gäller och vad det blir efter kampanjen.',
+      reason: 'Customer gave a campaign price but campaign length or normal price is missing.',
+      recommendedResponse: 'Det kan absolut vara ett kampanjpris. För att jämföra rätt behöver jag en kampanjuppgift till.',
       nextQuestions,
     };
   }

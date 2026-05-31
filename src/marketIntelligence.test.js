@@ -73,6 +73,41 @@ const campaignWithoutLength = classifyCustomerClaim({
 assert.equal(campaignWithoutLength.status, 'possible_needs_clarification');
 assert.ok(campaignWithoutLength.nextQuestions.some((question) => question.includes('kampanj')));
 
+const campaignWithNullLength = classifyCustomerClaim({
+  claimedPrice: 199,
+  dataGb: 50,
+  isUnlimited: false,
+  segment: 'private',
+  isCampaignPrice: true,
+  campaignMonths: null,
+});
+assert.equal(campaignWithNullLength.status, 'possible_needs_clarification');
+assert.ok(campaignWithNullLength.nextQuestions.some((question) => question.includes('kampanj')));
+
+const campaignWithoutNormalPrice = classifyCustomerClaim({
+  claimedPrice: 199,
+  dataGb: 50,
+  isUnlimited: false,
+  segment: 'private',
+  isCampaignPrice: true,
+  campaignMonths: 6,
+});
+assert.equal(campaignWithoutNormalPrice.status, 'possible_needs_clarification');
+assert.ok(campaignWithoutNormalPrice.nextQuestions.some((question) => question.includes('ordinarie pris')));
+
+const freeUnlimited = classifyCustomerClaim({
+  claimedPrice: 0,
+  isUnlimited: true,
+  segment: 'private',
+  operatorId: 'telia',
+});
+assert.equal(freeUnlimited.status, 'probably_not_sellable');
+assert.equal(shouldContinueSalesAttempt({
+  claimedPrice: 0,
+  isUnlimited: true,
+  segment: 'private',
+}), false);
+
 const studentRange = estimateMarketRange({ dataGb: 20, segment: 'student' });
 const seniorRange = estimateMarketRange({ dataGb: 20, segment: 'senior' });
 const youthRange = estimateMarketRange({ dataGb: 20, segment: 'youth' });

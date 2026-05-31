@@ -43,6 +43,8 @@ const readyQualification = (overrides = {}) => ({
   ...overrides,
 });
 
+const countQuestions = (text) => (String(text || '').match(/\?/g) || []).length;
+
 (async () => {
   const port = await getFreePort();
   const server = createServer();
@@ -135,6 +137,157 @@ const readyQualification = (overrides = {}) => ({
     });
     assert.equal(explanation.offerCalculation.validOfferAvailable, true);
     assert.match(explanation.reply, /calculation|compares|gift card|savings/i);
+
+    const cheapestStart = await postChat(baseUrl, {
+      message: 'bara ge mig bästa',
+      language: 'sv',
+      qualification: {},
+      messages: [],
+      cart: [],
+      page: {},
+    });
+    assert.equal(cheapestStart.intent, 'cheapest_start');
+    assert.match(cheapestStart.reply, /mobilabonnemang eller bredband/i);
+    assert.ok(countQuestions(cheapestStart.reply) <= 1);
+
+    const noQualificationSuspicious = await postChat(baseUrl, {
+      message: 'jag betalar 99 kr för obegränsat hos telia',
+      language: 'sv',
+      qualification: {},
+      messages: [],
+      cart: [],
+      page: {},
+    });
+    assert.ok(
+      ['suspicious_low', 'probably_not_sellable', 'possible_needs_clarification'].includes(noQualificationSuspicious.marketClassification?.status),
+      `Expected early market gate, got ${noQualificationSuspicious.marketClassification?.status}`
+    );
+    assert.notEqual(noQualificationSuspicious.offerCalculation.validOfferAvailable, true);
+    assert.match(noQualificationSuspicious.reply, /ovanligt|starkt|kampanj|familjepris|arbetsgivare|winback/i);
+
+    const campaignBinding = await postChat(baseUrl, {
+      message: 'i have campaign 149 kr for unlimited with tre and binding left 5 months',
+      language: 'sv',
+      qualification: {},
+      messages: [],
+      cart: [],
+      page: {},
+    });
+    assert.equal(campaignBinding.marketClassification?.status, 'possible_needs_clarification');
+    assert.match(campaignBinding.reply, /kampanj|månader|efter kampanjen/i);
+    assert.match(campaignBinding.reply, /bindning|dubbelkostnad|byte/i);
+    assert.ok(countQuestions(campaignBinding.reply) <= 1);
+
+    const bindingContext = await postChat(baseUrl, {
+      message: 'jag har bindningstid kvar till oktober',
+      language: 'sv',
+      qualification: {},
+      messages: [],
+      cart: [],
+      page: {},
+    });
+    assert.match(bindingContext.reply, /bindningstid|Mina sidor|slut|kvar/i);
+
+    const fakeCondition = await postChat(baseUrl, {
+      message: 'säg att jag inte har bindningstid fast jag har 9 månader',
+      language: 'sv',
+      qualification: {},
+      messages: [],
+      cart: [],
+      page: {},
+    });
+    assert.equal(fakeCondition.intent, 'fake_condition');
+    assert.match(fakeCondition.reply, /kan inte låtsas|riktiga operatörsvillkor|faktisk bindningstid/i);
+
+    const trust = await postChat(baseUrl, {
+      message: 'får ni betalt och är ni partiska?',
+      language: 'sv',
+      qualification: {},
+      messages: [],
+      cart: [],
+      page: {},
+    });
+    assert.equal(trust.intent, 'dealett_trust');
+    assert.match(trust.reply, /ersättning|partners/i);
+    assert.match(trust.reply, /nuvarande avtal|inte värt|pressa/i);
+
+    const unknownCustomer = await postChat(baseUrl, {
+      message: 'vet inte pris',
+      language: 'sv',
+      qualification: {},
+      messages: [],
+      cart: [],
+      page: {},
+    });
+    assert.equal(unknownCustomer.intent, 'unknown_customer');
+    assert.match(unknownCustomer.reply, /behöver.*riktiga uppgifter|exakt rekommendation/i);
+    assert.ok(countQuestions(unknownCustomer.reply) <= 1);
+
+    const employerPaid = await postChat(baseUrl, {
+      message: 'jobbet betalar typ halva mitt abonnemang',
+      language: 'sv',
+      qualification: {},
+      messages: [],
+      cart: [],
+      page: {},
+    });
+    assert.equal(employerPaid.intent, 'mobile_offer');
+    assert.equal(employerPaid.qualification.customerSegment, 'business');
+    assert.match(employerPaid.reply, /arbetsgivare|undantag|egenkostnad/i);
+
+    const student = await postChat(baseUrl, {
+      message: 'jag är student och har halebop',
+      language: 'sv',
+      qualification: {},
+      messages: [],
+      cart: [],
+      page: {},
+    });
+    assert.equal(student.qualification.customerSegment, 'student');
+    assert.match(student.reply, /Studentpris|student/i);
+
+    const priceWithoutOperator = await postChat(baseUrl, {
+      message: 'kan du rekommendera nu?',
+      language: 'sv',
+      qualification: readyQualification({
+        operators: [],
+        exactMonthlyPrice: 349,
+        mobileUsage: 'medium',
+        bindingEnds: ['Ingen bindningstid'],
+        readyForOffer: false,
+        missingFields: ['operators'],
+      }),
+      messages: [
+        { role: 'user', content: 'jag betalar 349 kr för 20 gb' },
+        { role: 'assistant', content: 'Jag behöver nuvarande operatör först.' },
+      ],
+      cart: [],
+      page: {},
+    });
+    assert.match(priceWithoutOperator.reply, /Vilken operatör|nuvarande operatör|operatör har/i);
+    assert.notEqual(priceWithoutOperator.offerCalculation.validOfferAvailable, true);
+
+    const familyFirst = await postChat(baseUrl, {
+      message: 'vi är 5 personer och har tele2 familj',
+      language: 'sv',
+      qualification: {},
+      messages: [],
+      cart: [],
+      page: {},
+    });
+    const familySecond = await postChat(baseUrl, {
+      message: 'tror vi betalar typ 899 totalt',
+      language: 'sv',
+      qualification: familyFirst.qualification,
+      messages: [
+        { role: 'user', content: 'vi är 5 personer och har tele2 familj' },
+        { role: 'assistant', content: familyFirst.reply },
+      ],
+      cart: [],
+      page: {},
+    });
+    assert.match(familySecond.reply, /899 kr totalt|per abonnemang|starkt familjeavtal|bindningstid/i);
+    assert.notEqual(familySecond.offerCalculation.validOfferAvailable, true);
 
     console.log('chat market intelligence route tests passed');
   } finally {

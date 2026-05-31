@@ -126,6 +126,9 @@ const normalizeCommonTypos = (message) => String(message || '')
   .replace(/\babonneamng\b/gi, 'abonnemang')
   .replace(/\babonnemnet\b/gi, 'abonnemang')
   .replace(/\babbonemang\b/gi, 'abonnemang')
+  .replace(/\babb\b/gi, 'abonnemang')
+  .replace(/\btele\s+2\b/gi, 'Tele2')
+  .replace(/\b4\s*hundra\b/gi, '400')
   .replace(/\bbehovs analys\b/gi, 'behovsanalys');
 
 const formatBindingValue = (value, isEnglish) => {
@@ -273,14 +276,23 @@ const normalizeQualification = (qualification = {}) => {
   const exactMonthlyPrices = peopleCount && qualification.priceAppliesToAll && rawExactMonthlyPrices.length === 1
     ? Array.from({ length: peopleCount }, () => rawExactMonthlyPrices[0])
     : rawExactMonthlyPrices;
+  const customerSegment = ['private', 'family', 'student', 'senior', 'youth', 'child', 'business'].includes(qualification.customerSegment)
+    ? qualification.customerSegment
+    : null;
+  const familyTotalPrice = Number(qualification.familyTotalPrice) > 0
+    ? Math.round(Number(qualification.familyTotalPrice))
+    : null;
 
-  const missingFields = [];
+  let missingFields = [];
   if (!peopleCount) missingFields.push('peopleCount');
   if (!peopleCount || operators.length < peopleCount) missingFields.push('operators');
   if (!peopleCount || bindingEnds.length < peopleCount) missingFields.push('bindingEnds');
   if (!mobileUsage) missingFields.push('mobileUsage');
   if (!priceRange && !exactMonthlyPrice && (!peopleCount || exactMonthlyPrices.length < peopleCount)) {
     missingFields.push('priceRange');
+  }
+  if (exactMonthlyPrice && !familyTotalPrice && !operators.length && missingFields.includes('operators')) {
+    missingFields = ['operators', ...missingFields.filter((field) => field !== 'operators')];
   }
 
   return {
@@ -291,6 +303,8 @@ const normalizeQualification = (qualification = {}) => {
     priceRange,
     exactMonthlyPrice,
     exactMonthlyPrices,
+    customerSegment,
+    familyTotalPrice,
     operatorAppliesToAll: Boolean(qualification.operatorAppliesToAll),
     bindingAppliesToAll: Boolean(qualification.bindingAppliesToAll),
     priceAppliesToAll: Boolean(qualification.priceAppliesToAll),
@@ -311,6 +325,13 @@ const inferQualificationFromText = (message, qualification = {}) => {
   const countMatch = lower.match(new RegExp(`(\\d+|${numberWordPattern})\\s*(person|personer|abonnemang|subscriptions?|people|hemma|home)`, 'i'));
   const naturalFamilyCount = inferPeopleCountFromFamilyText(lower);
 
+  if (/student/.test(lower)) next.customerSegment = 'student';
+  if (/senior|pensionär|pensionar/.test(lower)) next.customerSegment = 'senior';
+  if (/ungdom|youth/.test(lower)) next.customerSegment = 'youth';
+  if (/barn|child/.test(lower)) next.customerSegment = 'child';
+  if (/företag|business|arbetsgivare|employer|jobbet betalar|work pays|company pays/.test(lower)) next.customerSegment = 'business';
+  if (/familj|family|delat|shared|samla/.test(lower)) next.customerSegment = 'family';
+
   if (countMatch) next.peopleCount = parseNumberValue(countMatch[1]);
   else if (!Number(next.peopleCount)) {
     if (naturalFamilyCount) next.peopleCount = naturalFamilyCount;
@@ -319,12 +340,13 @@ const inferQualificationFromText = (message, qualification = {}) => {
     else if (/\b(three|tre)\s+(subscriptions?|abonnemang|personer|people)\b/i.test(lower)) next.peopleCount = 3;
     else if (/\b(four|fyra)\s+(subscriptions?|abonnemang|personer|people)\b/i.test(lower)) next.peopleCount = 4;
     else if (/jag och (min )?(mamma|pappa|fru|man|partner)|mom and i|dad and i|my partner and i/i.test(lower)) next.peopleCount = 2;
+    else if (/jag är student|jag ar student|i am a student|i'm a student|min pappa|min mamma|my dad|my father|my mom|my mother/i.test(lower)) next.peopleCount = 1;
     else if (/bara jag|bara mig|just me|only me/i.test(lower)) next.peopleCount = 1;
   }
 
   const operatorMatches = extractOperatorMatches(text);
   if (operatorMatches.length) {
-    if (operatorMatches.length === 1 && /alla|samtliga|båda|both|all/i.test(lower)) {
+    if (operatorMatches.length === 1 && (/alla|samtliga|båda|both|all/i.test(lower) || (/familj|family/.test(lower) && Number(next.peopleCount) > 1))) {
       next.operatorAppliesToAll = true;
       next.operators = appendUntilPeopleCount(next.operators, operatorMatches[0], next.peopleCount);
     } else {
@@ -339,6 +361,8 @@ const inferQualificationFromText = (message, qualification = {}) => {
   if (bindingAnswers) {
     if (bindingAnswers.length === 1 && /alla|samtliga|båda|both|all/i.test(lower)) next.bindingAppliesToAll = true;
     next.bindingEnds = bindingAnswers;
+  } else if (hasBindingSignal(lower) && !next.bindingEnds.length) {
+    next.bindingEnds = ['Vet inte'];
   }
   if (/samma.*alla|same.*all/i.test(lower) && Number(next.peopleCount) > 1 && next.bindingEnds.length === 1) {
     next.bindingAppliesToAll = true;
@@ -346,7 +370,7 @@ const inferQualificationFromText = (message, qualification = {}) => {
 
   if (/wifi|social|sociala medier|lite surf/i.test(lower)) next.mobileUsage = 'low';
   if (/stream|video|youtube|netflix|hbo|disney/i.test(lower)) next.mobileUsage = 'medium';
-  if (/max surf|fri surf|obegränsad|obegransad|unlimited|unlimited data|100\s*gb/i.test(lower)) next.mobileUsage = 'high';
+  if (/max surf|mycket surf|fri surf|obegränsad|obegransad|obegränsat|obegransat|unlimited|unlimited data|100\s*gb/i.test(lower)) next.mobileUsage = 'high';
   const dataGbMatch = lower.match(/(\d{1,4})\s*(gb|gigabyte|gig|giga)\b/i);
   if (dataGbMatch) {
     const dataGb = Number(dataGbMatch[1]);
@@ -368,18 +392,40 @@ const inferQualificationFromText = (message, qualification = {}) => {
       .map((match) => Number(match[1]))
       .filter((price) => Number.isFinite(price) && price >= 50 && price <= 2000);
   }
+  if (
+    !exactPrices.length &&
+    /betalar|kostar|pris|totalt|sammanlagt|tillsammans|total|combined/i.test(priceSource)
+  ) {
+    exactPrices = [...priceSource.matchAll(/\b(\d{2,4})\b/g)]
+      .map((match) => Number(match[1]))
+      .filter((price) => Number.isFinite(price) && price >= 50 && price <= 2000);
+  }
   if (exactPrices.length) {
     const exactPrice = exactPrices[0];
+    const totalPriceMention = exactPrices.length === 1 &&
+      /totalt|sammanlagt|tillsammans|total|altogether|combined/i.test(lower);
+    const totalPriceAppliesToFamily = totalPriceMention && Number(next.peopleCount) > 1;
+    const totalPriceNeedsPeople = totalPriceMention && !Number(next.peopleCount);
+    const perPersonPrice = totalPriceAppliesToFamily
+      ? Math.round(exactPrice / Number(next.peopleCount))
+      : (totalPriceNeedsPeople ? null : exactPrice);
     const rangePrice = exactPrices.length > 1
       ? Math.round(exactPrices.reduce((sum, price) => sum + price, 0) / exactPrices.length)
-      : exactPrice;
-    next.exactMonthlyPrice = exactPrice;
+      : (perPersonPrice || exactPrice);
+    if (perPersonPrice !== null) next.exactMonthlyPrice = perPersonPrice;
+    if (totalPriceMention) {
+      next.familyTotalPrice = exactPrice;
+    }
+    if (totalPriceAppliesToFamily) {
+      next.priceAppliesToAll = true;
+      next.exactMonthlyPrices = Array.from({ length: Number(next.peopleCount) }, () => perPersonPrice);
+    }
     if (exactPrices.length > 1) {
       next.exactMonthlyPrices = [...next.exactMonthlyPrices, ...exactPrices].slice(0, Number(next.peopleCount) || 10);
-    } else if (/alla|samtliga|all|var|each|per/i.test(lower)) {
+    } else if (!totalPriceAppliesToFamily && /alla|samtliga|all|var|each|per/i.test(lower)) {
       next.priceAppliesToAll = true;
       next.exactMonthlyPrices = appendUntilPeopleCount(next.exactMonthlyPrices, exactPrice, next.peopleCount);
-    } else if (Number(next.peopleCount) > 1 && next.exactMonthlyPrices.length < Number(next.peopleCount)) {
+    } else if (!totalPriceAppliesToFamily && Number(next.peopleCount) > 1 && next.exactMonthlyPrices.length < Number(next.peopleCount)) {
       next.exactMonthlyPrices = [...next.exactMonthlyPrices, exactPrice].slice(0, Number(next.peopleCount));
     }
 
@@ -429,8 +475,34 @@ const extractNormalPriceAfterCampaign = (text) => {
   return match ? Number(match[1]) : null;
 };
 
+const extractClaimedMarketPrice = (text, qualification = {}) => {
+  if (
+    qualification.exactMonthlyPrice !== null &&
+    qualification.exactMonthlyPrice !== undefined &&
+    qualification.exactMonthlyPrice !== '' &&
+    Number.isFinite(Number(qualification.exactMonthlyPrice))
+  ) return Number(qualification.exactMonthlyPrice);
+
+  const averagePrice = getAveragePrice(qualification.exactMonthlyPrices || []);
+  if (averagePrice !== null) return averagePrice;
+
+  const source = String(text || '').toLowerCase();
+  if (/\b(gratis|free|0\s*(kr|sek|kronor))\b/.test(source)) return 0;
+
+  const explicit = [...source.matchAll(/(\d{1,4})\s*(kr|sek|kronor|spänn|spann)/g)]
+    .map((match) => Number(match[1]))
+    .filter((price) => Number.isFinite(price) && price >= 0 && price <= 5000);
+  if (explicit.length) return explicit[explicit.length - 1];
+
+  const spokenHundreds = source.match(/\b(\d+)\s*hundra\b/);
+  if (spokenHundreds) return Number(spokenHundreds[1]) * 100;
+
+  return null;
+};
+
 const getMarketSegmentFromText = (text, qualification = {}) => {
   const lower = String(text || '').toLowerCase();
+  if (qualification.customerSegment) return qualification.customerSegment;
   if (/företag|business|arbetsgivare|employer/.test(lower)) return 'business';
   if (/student/.test(lower)) return 'student';
   if (/senior|pensionär|pensionar/.test(lower)) return 'senior';
@@ -444,12 +516,9 @@ const buildMarketClaim = ({ message, messages = [], qualification = {}, offerCal
   const recentText = getRecentUserText(message, messages);
   const lower = recentText.toLowerCase();
   const latestLower = String(message || '').toLowerCase();
-  const explicitPrice = Number(qualification.exactMonthlyPrice) > 0
-    ? Number(qualification.exactMonthlyPrice)
-    : getAveragePrice(qualification.exactMonthlyPrices || []);
-  const claimedPrice = explicitPrice || null;
+  const claimedPrice = extractClaimedMarketPrice(recentText, qualification);
   const explicitDataGb = extractMarketDataGb(recentText);
-  const isUnlimited = /obegränsad|obegransad|fri surf|unlimited/.test(lower) ||
+  const isUnlimited = /obegränsad|obegransad|obegränsat|obegransat|fri surf|unlimited/.test(lower) ||
     (qualification.mobileUsage === 'high' && explicitDataGb === null);
   const dataGb = isUnlimited
     ? null
@@ -465,9 +534,14 @@ const buildMarketClaim = ({ message, messages = [], qualification = {}, offerCal
   const segment = getMarketSegmentFromText(recentText, qualification);
   const firstOperator = qualification.operators?.[0] || null;
   const operatorId = firstOperator ? OPERATOR_ID_BY_NAME[firstOperator] : null;
-  const marketSignal = /telia|tele2|telenor|tre|halebop|operatör|operator|pris|price|betalar|pay|kostar|kr|sek|kronor|spänn|spann|gb|gig|surf|data|obegränsad|obegransad|unlimited|familj|family|student|senior|ungdom|youth|barn|child|kampanj|campaign|arbetsgivare|employer|winback|behållet|retained|paket|bundle|rabatt|discount/.test(lower);
-  const latestMarketSignal = /pris|price|betalar|pay|kostar|kr|sek|kronor|spänn|spann|gb|gig|surf|data|obegränsad|obegransad|unlimited|familj|family|student|senior|ungdom|youth|barn|child|kampanj|campaign|arbetsgivare|employer|winback|behållet|retained|paket|bundle|rabatt|discount/.test(latestLower);
-  const hasClaim = Boolean(claimedPrice && marketSignal && (latestMarketSignal || qualification.readyForOffer) && (isUnlimited || dataGb !== null || segment !== 'private'));
+  const marketSignal = /telia|tele2|telenor|tre|halebop|operatör|operator|pris|price|betalar|pay|kostar|kr|sek|kronor|spänn|spann|gb|gig|surf|data|obegränsad|obegransad|obegränsat|obegransat|unlimited|familj|family|student|senior|ungdom|youth|barn|child|kampanj|campaign|arbetsgivare|employer|winback|behållet|retained|paket|bundle|rabatt|discount/.test(lower);
+  const latestMarketSignal = /pris|price|betalar|pay|kostar|kr|sek|kronor|spänn|spann|gb|gig|surf|data|obegränsad|obegransad|obegränsat|obegransat|unlimited|familj|family|student|senior|ungdom|youth|barn|child|kampanj|campaign|arbetsgivare|employer|winback|behållet|retained|paket|bundle|rabatt|discount|gäller.*månader|bara.*månader|temporary|slå|beat|vanliga pris|ordinary price/.test(latestLower);
+  const hasClaim = Boolean(
+    claimedPrice !== null &&
+    marketSignal &&
+    (latestMarketSignal || qualification.readyForOffer) &&
+    (isUnlimited || dataGb !== null || segment !== 'private' || /kampanj|campaign|winback|arbetsgivare|employer/.test(lower))
+  );
 
   if (!hasClaim) return null;
 
@@ -477,7 +551,7 @@ const buildMarketClaim = ({ message, messages = [], qualification = {}, offerCal
     isUnlimited,
     segment,
     operatorId,
-    isCampaignPrice: /kampanj|campaign|intro|första|first/.test(lower),
+    isCampaignPrice: /kampanj|campaign|intro|första|first|gäller.*månader|bara.*månader|tillfällig|tillfallig|temporary/.test(lower),
     campaignMonths: extractCampaignMonths(recentText),
     normalPriceAfterCampaign: extractNormalPriceAfterCampaign(recentText),
     familyBundle: segment === 'family',
@@ -490,6 +564,7 @@ const buildMarketClaim = ({ message, messages = [], qualification = {}, offerCal
     oldRetainedContract: /gammalt|behållet|behallet|retained|old contract/.test(lower),
     bundledDiscount: /paket|bundle|bredband.*mobil|mobil.*bredband/.test(lower),
     winbackOffer: /winback|stanna kvar|retention|räddningserbjudande/.test(lower),
+    hasBindingContext: hasBindingSignal(lower) || Boolean(qualification.bindingEnds?.length),
     canDealettBeat: offerCalculation?.validOfferAvailable === true
       ? true
       : offerCalculation?.readyForOffer === true
@@ -502,6 +577,18 @@ const applyMarketIntelligenceGate = ({ intent, toolResult, marketClaim }) => {
   if (!['mobile_offer', 'family_offer'].includes(intent) || !marketClaim) return toolResult;
 
   const classification = classifyCustomerClaim(marketClaim);
+  if (
+    classification.status === 'human_review' &&
+    toolResult?.type === 'qualification' &&
+    marketClaim.familyBundle &&
+    Number(toolResult?.offerCalculation?.assumptions?.familyTotalPrice || 0) <= 0
+  ) {
+    return {
+      ...toolResult,
+      marketClaim,
+      marketClassification: classification,
+    };
+  }
   if (classification.status === 'realistic') {
     return {
       ...toolResult,
@@ -586,8 +673,44 @@ const isReluctantMessage = (message) => (
 );
 
 const hasStrongOfferIntent = (message) => (
-  /billigare|dyrt|för dyrt|sänka|sanka|spara|byta|jämför|jamfor|behovsanalys|erbjudande|rekommendera|hjälp.*välja|samla abonnemang|samla.*abonnemang|vill ha.*abonnemang|need cheaper|too expensive|switch|compare|offer|recommend|help.*choose/i
+  /billigare|billigast|bästa|basta|best|dyrt|för dyrt|sänka|sanka|spara|byta|jämför|jamfor|behovsanalys|erbjudande|rekommendera|hjälp.*välja|samla abonnemang|samla.*abonnemang|vill ha.*abonnemang|need cheaper|cheapest|lowest price|too expensive|switch|compare|offer|recommend|help.*choose/i
     .test(String(message || ''))
+);
+
+const hasCheapestOnlyIntent = (message) => (
+  /bara.*billigast|ge mig.*billigast|exakt billigast|exakt billigaste|billigaste abonnemang|bara.*bästa|bara.*basta|ge mig.*bästa|ge mig.*basta|bästa erbjudandet|basta erbjudandet|best deal|best offer|don't ask|dont ask|fråga inte|fraga inte|orkar inte svara/i
+    .test(String(message || ''))
+);
+
+const hasBindingSignal = (message) => (
+  /bindningstid|bindning|binding|contract|låst|last|uppsägning|uppsagning|till oktober|till november|till december|till januari|till februari|till mars|till april|till maj|till juni|till juli|till augusti|till september/i
+    .test(String(message || ''))
+);
+
+const hasCampaignSignal = (message) => (
+  /kampanj|campaign|första månader|första mån|bara.*månader|några månader|tillfällig|tillfallig|temporary|intro/i
+    .test(String(message || ''))
+);
+
+const hasFakeConditionSignal = (message) => (
+  /låtsas|latsas|säg att jag inte|sag att jag inte|skriv bara|räkna som student fast|rakna som student fast|fast jag inte|hitta på|fake|pretend/i
+    .test(String(message || ''))
+);
+
+const hasTrustSignal = (message) => (
+  /oberoende|partisk|partiska|lita på|lita pa|får ni betalt|far ni betalt|varför får ni betalt|varfor far ni betalt|betalar er|provision|ersättning|ersattning|biased|trust|paid/i
+    .test(String(message || ''))
+);
+
+const hasMobileConversationContext = (text, qualification = {}) => Boolean(
+  qualification.peopleCount ||
+  qualification.mobileUsage ||
+  qualification.priceRange ||
+  (qualification.exactMonthlyPrice !== null && qualification.exactMonthlyPrice !== undefined) ||
+  qualification.operators?.length ||
+  qualification.bindingEnds?.length ||
+  qualification.exactMonthlyPrices?.length ||
+  /mobil|abonnemang|telefon|operatör|operator|telia|tele2|telenor|tre|halebop|surf|gb|kr|sek|billig|dyrt|bindning|kampanj|winback|student|senior|familj/i.test(text)
 );
 
 const isGreetingOnly = (message) => (
@@ -649,9 +772,15 @@ const detectIntent = ({ message, messages = [], page = {}, qualification = {} })
     .map((item) => item.content)
     .join(' ')
     .toLowerCase();
+  const recentConversation = trimMessages(messages)
+    .map((item) => item.content)
+    .join(' ')
+    .toLowerCase();
+  const fullUserContext = [recentUserConversation, text].filter(Boolean).join(' ');
   const supportContextActive = /faktura|räkning|förfall|invoice|bill|mina sidor|konto|account|kundservice|support/.test(recentUserConversation);
   const coverageContextActive = /täckning|coverage|nät|map|karta|adress|address/.test(recentUserConversation);
   const checkoutContextActive = /köp|köpa|beställ|beställa|personnummer|uppgifter|checkout|cart|buy|purchase|personal details/.test(recentUserConversation);
+  const offerContextActive = /mobilabonnemang eller bredband|mobile subscription or broadband|hur många abonnemang|how many subscriptions|bästa|basta|billigast|för dyrt|dyrt|erbjudande|jämför|jamfor|hitta billigare|kan.*slå|beat it|current deal/i.test(recentConversation);
   const hasQualification = Boolean(
     qualification.peopleCount ||
     qualification.mobileUsage ||
@@ -662,14 +791,25 @@ const detectIntent = ({ message, messages = [], page = {}, qualification = {} })
     qualification.exactMonthlyPrices?.length
   );
 
+  if (hasTrustSignal(text)) return 'dealett_trust';
+  if (hasFakeConditionSignal(text)) return 'fake_condition';
+  if (/vet inte vad jag har|vet inte operatör|vet inte operator|vet inte pris|ingen aning.*pris|bara säg vad som är bäst|bara sag vad som ar bast/i.test(text)) return 'unknown_customer';
+  if (/jobbet betalar|arbetsgivare|employer.*pay|work pays|company pays/i.test(text)) return 'mobile_offer';
+  if (hasCheapestOnlyIntent(text) && !hasMobileConversationContext(fullUserContext, qualification)) return 'cheapest_start';
+  if (
+    offerContextActive &&
+    /vill inte|tänker inte|tanker inte|orkar inte|gissa|sluta.*frågor|dumma frågor|bara priset|slå|beat|operatör|operator|pris|price|betalar|pay|bindning|binding|surf|data|gb|kan ni|can you|säg bara|sag bara/i.test(text)
+  ) return 'mobile_offer';
   if (isGreetingOnly(text) || /vad kan du|what can you do|vem är du|who are you/i.test(text)) return 'greeting';
   if (numberOnlyPattern.test(text) && !hasQualification) return 'clarify_number';
   if (hasOutsideTopic(text) && !hasDealettTopic(text)) return 'outside_scope';
-  if (/täckning|coverage|nät|map|karta/i.test(text)) return 'coverage';
+  if (/täckning|coverage|nät|map|karta|garantera.*funkar|funkar.*lägenhet|fungerar.*lägenhet/i.test(text)) return 'coverage';
   if (coverageContextActive && /works|work|funkar|fungerar|täckning|coverage|nät|adress|address|karta|map|område|area|bor|live/i.test(text)) return 'coverage';
+  if (supportContextActive && hasStrongOfferIntent(text)) return 'mobile_offer';
+  if (hasStrongOfferIntent(text) && hasMobileConversationContext(fullUserContext, qualification)) return 'mobile_offer';
   if (
     hasQualification &&
-    /telia|tele2|telenor|tre|halebop|operatör|operator|no contract|ingen bindningstid|månader kvar|months? left|social|stream|wifi|surf|kr|sek|kronor|spänn|spann/i.test(text)
+    /telia|tele2|telenor|tre|halebop|operatör|operator|no contract|ingen bindningstid|månader kvar|months? left|social|stream|wifi|surf|kr|sek|kronor|spänn|spann|billigare|bättre|slå|byta|hitta billigare|cheaper|better|beat|switch/i.test(text)
   ) return 'mobile_offer';
   if (
     hasQualification &&
@@ -683,7 +823,7 @@ const detectIntent = ({ message, messages = [], page = {}, qualification = {} })
   if (hasPersonalDataInChat(text)) return 'checkout';
   if (checkoutContextActive && /inget erbjudande|inte valt|vad gör jag först|no offer|not selected|what do i do first/i.test(text)) return 'checkout';
   if (hasStrongOfferIntent(text) && /abonnemang|mobil|telefon|subscription|phone plan|mobile plan/i.test(text)) return 'mobile_offer';
-  if (hasStrongOfferIntent(text)) return 'offer_discovery';
+  if (hasStrongOfferIntent(text)) return 'cheapest_start';
   if (supportContextActive && /redan kund|befintlig kund|ungefär|datum|när|var ska|vart ska|kolla|hittar|already customer|existing customer|roughly|approximately|date|when|where should|where can|check|find/i.test(text)) return 'support';
   if (/faktura|räkning|betalning|förfall|invoice|\bbill\b|payment|due|mitt abonnemang|min bindningstid|hur länge|subscription length|my subscription|contract length|avtal|kundservice|support|mina sidor|konto|account|logga in|login|ändra|uppgradera|säga upp|cancel|befintlig kund|redan kund|existing customer|already customer|current customer/i.test(text)) return 'support';
   if (/signera|signering|köp|köpa|beställ|beställa|lägg.*varukorg|varukorg|flytta.*nummer|nummerflytt|startdatum|checkout|cart|purchase|buy|sign/i.test(text)) return 'checkout';
@@ -704,7 +844,7 @@ const detectIntent = ({ message, messages = [], page = {}, qualification = {} })
 
 const defaultSuggestions = ({ intent, qualification, offerCalculation, cart, language }) => {
   const isEnglish = language === 'en';
-  if (intent === 'greeting' || intent === 'unclear' || intent === 'unclear_direct' || intent === 'outside_scope' || intent === 'browsing' || intent === 'not_interested') {
+  if (intent === 'greeting' || intent === 'unclear' || intent === 'unclear_direct' || intent === 'unknown_customer' || intent === 'outside_scope' || intent === 'browsing' || intent === 'not_interested') {
     return isEnglish
       ? ['New offer', 'Existing customer', 'My cart', '5G broadband']
       : ['Nytt erbjudande', 'Befintlig kund', 'Min varukorg', '5G-bredband'];
@@ -921,6 +1061,63 @@ const buildMissingInfoReply = ({ nextField, isEnglish, message, qualification })
     priceRange: isEnglish ? 'What do you pay per subscription today?' : 'Vad betalar du per abonnemang idag?',
   };
 
+  if (/vill inte|tänker inte|tanker inte|du får gissa|du far gissa|gissa|orkar inte|sluta.*frågor|dumma frågor|don't ask|dont ask/i.test(text)) {
+    return isEnglish
+      ? `For a fair comparison I need real facts, because a guess can produce a bad recommendation. ${labels[nextField]}`
+      : `För att jämföra rätt behöver jag riktiga uppgifter, för en gissning kan ge fel rekommendation. ${labels[nextField]}`;
+  }
+
+  if (nextField === 'peopleCount' && Number(qualification?.familyTotalPrice) > 0 && !Number(qualification?.peopleCount)) {
+    return isEnglish
+      ? 'To use a household total fairly, I first need to know how many subscriptions it covers.'
+      : 'För att räkna på ett totalpris hemma behöver jag först veta hur många abonnemang det gäller.';
+  }
+
+  if (hasBindingSignal(text) || qualification?.bindingEnds?.some((value) => /vet/i.test(String(value || '')))) {
+    if (nextField === 'bindingEnds') {
+      return isEnglish
+        ? 'Switching may not be worth it before the binding period ends. When does the contract end, or how many months are left?'
+        : 'Byte kan bli ovärt innan bindningstiden är slut. När går bindningstiden ut, eller hur många månader är kvar?';
+    }
+    if (nextField === 'peopleCount') {
+      return isEnglish
+        ? 'The binding period matters because overlap cost can remove the saving. Is it one subscription or several?'
+        : 'Bindningstiden är viktig eftersom dubbelkostnad kan äta upp vinsten. Gäller det ett abonnemang eller flera?';
+    }
+  }
+
+  if (Number(qualification?.familyTotalPrice) > 0 && Number(qualification?.peopleCount) > 1) {
+    const perPerson = Math.round(Number(qualification.familyTotalPrice) / Number(qualification.peopleCount));
+    if (nextField === 'bindingEnds') {
+      return isEnglish
+        ? `${qualification.familyTotalPrice} SEK total is about ${perPerson} SEK per subscription, so it may already be a strong family deal. I need the remaining contract time before I compare.`
+        : `${qualification.familyTotalPrice} kr totalt är cirka ${perPerson} kr per abonnemang, så det kan redan vara ett starkt familjeavtal. Jag behöver bindningstiden innan jag jämför.`;
+    }
+    if (nextField === 'mobileUsage') {
+      return isEnglish
+        ? `${qualification.familyTotalPrice} SEK total is about ${perPerson} SEK per subscription. To know if Dealett can beat it, how much data do you need?`
+        : `${qualification.familyTotalPrice} kr totalt är cirka ${perPerson} kr per abonnemang. För att veta om Dealett kan slå det behöver jag veta hur mycket surf ni behöver.`;
+    }
+  }
+
+  if (qualification?.customerSegment === 'student') {
+    return isEnglish
+      ? `Student pricing can change the comparison, so I will compare carefully. ${labels[nextField]}`
+      : `Studentpris kan påverka jämförelsen, så jag jämför försiktigt. ${labels[nextField]}`;
+  }
+
+  if (qualification?.customerSegment === 'senior') {
+    return isEnglish
+      ? `Senior pricing can be a strong deal, so I will compare carefully. ${labels[nextField]}`
+      : `Seniorpris kan vara ett starkt avtal, så jag jämför försiktigt. ${labels[nextField]}`;
+  }
+
+  if (qualification?.customerSegment === 'business') {
+    return isEnglish
+      ? `Employer-paid plans can be exception deals, so I need to compare your real out-of-pocket cost and actual terms. ${labels[nextField]}`
+      : `När arbetsgivare betalar kan priset vara ett undantag, så jag behöver jämföra din riktiga egenkostnad och faktiska villkor. ${labels[nextField]}`;
+  }
+
   if (nextField === 'peopleCount') {
     if (/vet inte|not sure|don't know|dont know/i.test(text)) {
       return isEnglish
@@ -1032,31 +1229,46 @@ const buildMissingInfoReply = ({ nextField, isEnglish, message, qualification })
 
 const buildMarketIntelligenceReply = ({ toolResult, isEnglish }) => {
   const classification = toolResult?.marketClassification || {};
+  const marketClaim = toolResult?.marketClaim || {};
+  const hasPositive = (value) => Number.isFinite(Number(value)) && Number(value) > 0;
   const firstQuestion = Array.isArray(classification.nextQuestions) && classification.nextQuestions.length
     ? classification.nextQuestions[0]
     : 'Är priset ett kampanjpris, familjepris, rabatt, arbetsgivarbetalt eller winback-erbjudande?';
+  const bindingNote = marketClaim.hasBindingContext
+    ? (isEnglish
+      ? ' The remaining contract time also matters, because switching before it ends can remove the saving.'
+      : ' Bindningstiden spelar också roll, eftersom byte innan den är slut kan äta upp vinsten.')
+    : '';
 
   if (classification.status === 'possible_needs_clarification') {
+    if (marketClaim.isCampaignPrice) {
+      const campaignQuestion = !hasPositive(marketClaim.campaignMonths)
+        ? (isEnglish ? 'How many months is the campaign price valid?' : 'Hur många månader gäller kampanjpriset?')
+        : (isEnglish ? 'What is the price after the campaign?' : 'Vad blir priset efter kampanjen?');
+      return isEnglish
+        ? `That may be a strong campaign deal, but I need one detail before comparing fairly.${bindingNote} ${campaignQuestion}`
+        : `${classification.recommendedResponse || 'Det kan vara ett starkt kampanjpris, men jag behöver en uppgift till innan jag jämför.'}${bindingNote} ${campaignQuestion}`;
+    }
     return isEnglish
-      ? 'That price may be possible, but I need one detail before comparing fairly: is it a campaign, family/shared plan, student/senior/youth discount, employer-paid plan or winback offer?'
-      : `${classification.recommendedResponse || 'Det kan vara möjligt, men jag behöver ett förtydligande innan jag jämför.'} ${firstQuestion}`;
+      ? `That may be a strong deal, but I need one detail before comparing fairly.${bindingNote} Is it a campaign, family/shared plan, student/senior/youth discount, employer-paid plan or winback offer?`
+      : `${classification.recommendedResponse || 'Det kan vara möjligt, men jag behöver ett förtydligande innan jag jämför.'}${bindingNote} ${firstQuestion}`;
   }
 
   if (classification.status === 'suspicious_low') {
     return isEnglish
-      ? 'That is unusually low compared with normal market levels. I am not saying it is wrong, but before recommending anything I need to know if it is a campaign, family/shared price, discount, employer-paid plan or winback offer.'
-      : 'Det är ovanligt lågt jämfört med normal marknadsnivå. Jag säger inte att det är fel, men innan jag rekommenderar något behöver jag veta om det är kampanj, familjepris, rabatt, arbetsgivare eller winback.';
+      ? `That is unusually low compared with normal market levels. I am not saying it is wrong, but before recommending anything I need to know if it is a campaign, family/shared price, discount, employer-paid plan or winback offer.${bindingNote}`
+      : `Det är ovanligt lågt jämfört med normal marknadsnivå. Jag säger inte att det är fel, men innan jag rekommenderar något behöver jag veta om det är kampanj, familjepris, rabatt, arbetsgivare eller winback.${bindingNote}`;
   }
 
   if (classification.status === 'probably_not_sellable') {
     return isEnglish
-      ? 'If that current deal is correct, it is probably already very strong. Dealett should not pressure you to switch unless the total calculation is clearly better.'
-      : 'Om det nuvarande avtalet stämmer är det troligen redan väldigt starkt. Dealett ska inte pressa fram ett byte om totalen inte tydligt blir bättre.';
+      ? `If that current deal is correct, it is probably already very strong. Check whether it is a campaign, family/shared price, student/senior discount, employer-paid plan or winback offer. It may actually be better to keep it for now.${bindingNote}`
+      : `Om det nuvarande avtalet stämmer är det troligen redan väldigt starkt. Kontrollera bara om priset beror på kampanj, familjepris, student-/seniorrabatt, arbetsgivare eller winback. Då kan det faktiskt vara bättre att behålla det tills vidare.${bindingNote}`;
   }
 
   return isEnglish
-    ? 'I do not want to give a firm recommendation yet because the market comparison needs one more detail. Is the price ordinary, campaign-based, discounted, shared with family, employer-paid or a winback offer?'
-    : 'Jag vill inte ge en fast rekommendation än eftersom marknadsjämförelsen behöver en uppgift till. Är priset ordinarie, kampanj, rabatt, familjedelat, arbetsgivarbetalt eller winback?';
+    ? `I do not want to give a firm recommendation yet because the market comparison needs one more detail.${bindingNote} Is the price ordinary, campaign-based, discounted, shared with family, employer-paid or a winback offer?`
+    : `Jag vill inte ge en fast rekommendation än eftersom marknadsjämförelsen behöver en uppgift till.${bindingNote} Är priset ordinarie, kampanj, rabatt, familjedelat, arbetsgivarbetalt eller winback?`;
 };
 
 const fallbackReply = ({ intent, language, message, qualification, toolResult }) => {
@@ -1071,10 +1283,30 @@ const fallbackReply = ({ intent, language, message, qualification, toolResult })
       ? 'I can only help with Dealett topics like mobile plans, 5G broadband, coverage, gift cards, cart and customer service. What do you need help with at Dealett?'
       : 'Jag kan bara hjälpa med Dealett-frågor som mobilabonnemang, 5G-bredband, täckning, presentkort, varukorg och kundservice. Vad behöver du hjälp med hos Dealett?';
   }
+  if (intent === 'dealett_trust') {
+    return isEnglish
+      ? 'Dealett may earn compensation from partners if you buy through us. The AI should still act on your side: if your current deal looks better, unusually strong, or not worth switching from, I should say that instead of forcing a switch.'
+      : 'Dealett kan få ersättning från partners om du köper via oss. AI:n ska ändå stå på kundens sida: om ditt nuvarande avtal verkar bättre, ovanligt starkt eller inte värt att byta från ska jag säga det istället för att pressa fram ett byte.';
+  }
+  if (intent === 'fake_condition') {
+    return isEnglish
+      ? 'I cannot pretend or calculate from fake conditions. Dealett can only compare using the actual operator terms, price, data need and remaining contract time.'
+      : 'Jag kan inte låtsas eller räkna på fejkade villkor. Dealett kan bara jämföra med riktiga operatörsvillkor, pris, surfbehov och faktisk bindningstid.';
+  }
+  if (intent === 'cheapest_start') {
+    return isEnglish
+      ? 'Do you want to compare a mobile subscription or broadband?'
+      : 'Är det mobilabonnemang eller bredband du vill jämföra?';
+  }
+  if (intent === 'unknown_customer') {
+    return isEnglish
+      ? 'No problem. For an exact recommendation I need real facts, but we can start small. Do you want to compare a mobile subscription or broadband?'
+      : 'Ingen fara. För en exakt rekommendation behöver jag riktiga uppgifter, men vi kan börja enkelt. Är det mobilabonnemang eller bredband du vill jämföra?';
+  }
   if (intent === 'offer_discovery') {
     return isEnglish
-      ? 'Sure. We can do a needs analysis. Should we look at mobile subscriptions, a family bundle, or 5G broadband?'
-      : 'Absolut. Vi kan göra en behovsanalys. Ska vi titta på mobilabonnemang, familjepaket eller 5G-bredband?';
+      ? 'Do you want to compare a mobile subscription, a family bundle, or 5G broadband?'
+      : 'Vill du jämföra mobilabonnemang, familjepaket eller 5G-bredband?';
   }
   if (intent === 'browsing') {
     return buildBrowsingReply({ isEnglish, message });
@@ -1304,7 +1536,7 @@ const buildPrompt = ({ language, intent, message, messages, qualification, toolR
 ].join('\n');
 
 const shouldUseDeterministicReply = ({ intent, toolResult }) => {
-  if (['outside_scope', 'offer_discovery', 'browsing', 'not_interested', 'clarify_number'].includes(intent)) return true;
+  if (['outside_scope', 'offer_discovery', 'browsing', 'not_interested', 'clarify_number', 'dealett_trust', 'fake_condition', 'cheapest_start', 'unknown_customer'].includes(intent)) return true;
   return [
     'market_intelligence',
     'qualification',

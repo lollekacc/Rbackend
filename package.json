@@ -3,9 +3,11 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "check": "node --check server.js && node --check chat-service.js && node --check offer-service.js && node --check offer-calculator.js && node --check src/marketIntelligence.js && node --check src/marketIntelligence.test.js && node --check src/chatMarketIntelligence.test.js && node --check scripts/validate-market-data.js && node --check tests/chatbot-evaluations/run-chatbot-evals.js",
+    "check": "node --check server.js && node --check chat-service.js && node --check offer-service.js && node --check offer-calculator.js && node --check src/marketIntelligence.js && node --check src/marketIntelligence.test.js && node --check src/chatMarketIntelligence.test.js && node --check scripts/validate-market-data.js && node --check scripts/market-verification-report.js && node --check tests/chatbot-evaluations/run-chatbot-evals.js && node --check tests/chatbot-evaluations/live-customer-simulator.js",
     "eval:chatbot": "node tests/chatbot-evaluations/run-chatbot-evals.js",
+    "eval:chatbot:live": "node tests/chatbot-evaluations/live-customer-simulator.js",
     "validate:market": "node scripts/validate-market-data.js",
+    "market:verification-report": "node scripts/market-verification-report.js",
     "test:market": "node src/marketIntelligence.test.js",
     "test:chat-market": "node src/chatMarketIntelligence.test.js"
   }

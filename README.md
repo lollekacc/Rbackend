@@ -10,6 +10,8 @@ Dealett AI uses a separated market-data model so it can reason about Swedish tel
 - `data/plans.json` is public market intelligence at plan level. It supports private, family, student, senior, youth, child and business plan structures. Existing runtime rows are marked `placeholder`; they must not be treated as verified market prices.
 - `data/partner-offers.json` is only for Dealett sellable offers. Rows should stay inactive until the operator, plan, reward and source have been verified.
 - `data/market-rules.json` defines claim-classification rules and placeholder heuristic ranges for judging customer price claims. These ranges are not real offers.
+- `data/market-verification-checklist.json` defines the manual verification scope for Telia, Tele2, Telenor, Tre and Halebop. It lists the categories and plan fields that must be checked by a human before data can be trusted in production.
+- `docs/market-verification-checklist.md` is the human-readable checklist for manual operator/category verification.
 
 ### AI Behavior Rules
 
@@ -21,9 +23,12 @@ If the customer already has a clearly better deal than Dealett can beat, Dealett
 
 Prices, segments, plan details, reward amounts and source URLs must be updated regularly. Placeholder values are allowed for structure and development. Fake verified prices are not allowed. Only mark data as `verified` when the row has a current source URL and has been manually checked.
 
+Run the manual verification report before updating production-facing market data. The report writes both JSON and Markdown output in `reports/` and flags placeholder rows, missing source URLs, missing dates, missing prices and incomplete operator/category coverage.
+
 ### Commands
 
 ```bash
 npm run validate:market
+npm run market:verification-report
 npm run test:market
 ```
