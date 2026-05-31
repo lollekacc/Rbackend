@@ -25,10 +25,13 @@ Prices, segments, plan details, reward amounts and source URLs must be updated r
 
 Run the manual verification report before updating production-facing market data. The report writes both JSON and Markdown output in `reports/` and flags placeholder rows, missing source URLs, missing dates, missing prices and incomplete operator/category coverage.
 
+The market update pipeline framework lives in `scripts/market-data/`. Collectors currently return `status: "not_implemented"` and do not scrape. Running `npm run market:update` saves raw placeholder snapshots in `data/market/raw/`, normalized output in `data/market/normalized/`, and update reports in `data/market/reports/`. The command is dry-run by default and leaves `data/plans.json` unchanged. Later, apply mode can be enabled with `MARKET_APPLY=true npm run market:update`; even then, verified rows are not overwritten automatically and all changes are reported.
+
 ### Commands
 
 ```bash
 npm run validate:market
 npm run market:verification-report
+npm run market:update
 npm run test:market
 ```
