@@ -212,12 +212,13 @@ const getQuickRepliesForChatState = ({ intent, language = 'sv', conversationStyl
   const normalizedLanguage = language === 'en' ? 'en' : 'sv';
   const sets = quickReplySets[normalizedLanguage];
   const style = conversationStyle?.style || null;
+  const intentHasActiveFlow = ['mobile_offer', 'family_offer', 'broadband', 'coverage', 'support', 'checkout', 'gift_card'].includes(intent);
 
   if (intent === 'greeting') return normalizeQuickReplies(sets.greeting);
   if (intent === 'browsing') return normalizeQuickReplies(sets.browsing);
   if (intent === 'coverage') return normalizeQuickReplies(sets.coverage);
   if (['direct_answer', 'impatient', 'human_test'].includes(style)) return normalizeQuickReplies(sets.direct);
-  if (style === 'confused' || ['unknown_customer', 'unclear', 'unclear_direct'].includes(intent)) {
+  if ((style === 'confused' && !intentHasActiveFlow) || ['unknown_customer', 'unclear', 'unclear_direct'].includes(intent)) {
     return normalizeQuickReplies(sets.confused);
   }
 
