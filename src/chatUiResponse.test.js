@@ -3,6 +3,8 @@ const fs = require('node:fs');
 const net = require('node:net');
 const path = require('node:path');
 
+process.env.DEALETT_CHAT_FORCE_FALLBACK = '1';
+
 const { createServer } = require('../server');
 const {
   buildCoverageSelectorWidget,
@@ -428,7 +430,53 @@ const postChat = async (baseUrl, payload) => {
     });
     assertNoStaleOfferLoop(genericMobileStart);
     assert.equal(genericMobileStart.intent, 'mobile_offer');
-    assert.match(genericMobileStart.reply, /Hur många abonnemang|gäller det ett abonnemang eller flera/i);
+    assert.match(genericMobileStart.reply, /Är det bara till dig|flera abonnemang/i);
+
+    const compareSubscriptionStart = await postChat(baseUrl, {
+      message: 'jag vill jämföra abonnemang',
+      language: 'sv',
+      messages: [
+        { role: 'user', content: 'hej' },
+        { role: 'assistant', content: greeting.reply },
+      ],
+      qualification: {},
+      cart: [],
+      page: {},
+    });
+    assert.equal(compareSubscriptionStart.intent, 'mobile_offer');
+    assert.match(compareSubscriptionStart.reply, /Är det bara till dig|flera abonnemang/i);
+    assert.doesNotMatch(compareSubscriptionStart.reply, /Vad jämför du: operatörer, pris eller täckning/i);
+
+    const severalSubscriptionsFollowup = await postChat(baseUrl, {
+      message: 'flera',
+      language: 'sv',
+      messages: [
+        { role: 'user', content: 'Mobilabonnemang' },
+        { role: 'assistant', content: genericMobileStart.reply },
+      ],
+      qualification: genericMobileStart.qualification,
+      cart: [],
+      page: {},
+    });
+    assert.equal(severalSubscriptionsFollowup.intent, 'mobile_offer');
+    assert.match(severalSubscriptionsFollowup.reply, /Absolut\. Hur många abonnemang gäller det ungefär\?/i);
+    assert.doesNotMatch(severalSubscriptionsFollowup.reply, /För att jag ska kunna hjälpa|familj eller flera i samma hushåll/i);
+    assert.deepEqual(severalSubscriptionsFollowup.quickReplies, []);
+
+    const startAfterCompareKeepsFlow = await postChat(baseUrl, {
+      message: 'kör',
+      language: 'sv',
+      messages: [
+        { role: 'user', content: 'jag vill jämföra abonnemang' },
+        { role: 'assistant', content: compareSubscriptionStart.reply },
+      ],
+      qualification: compareSubscriptionStart.qualification,
+      cart: [],
+      page: {},
+    });
+    assert.equal(startAfterCompareKeepsFlow.intent, 'mobile_offer');
+    assert.match(startAfterCompareKeepsFlow.reply, /Är det bara till dig|flera abonnemang/i);
+    assert.deepEqual(startAfterCompareKeepsFlow.quickReplies, []);
 
     const priceOnlyStart = await postChat(baseUrl, {
       message: 'jag vill inte just nu jag vill bara får pris',
@@ -442,7 +490,7 @@ const postChat = async (baseUrl, payload) => {
       page: {},
     });
     assert.equal(priceOnlyStart.intent, 'mobile_offer');
-    assert.match(priceOnlyStart.reply, /håller det till pris|bara dig eller flera abonnemang/i);
+    assert.match(priceOnlyStart.reply, /Absolut|bara för dig|flera abonnemang/i);
 
     const onePersonPriceFlow = await postChat(baseUrl, {
       message: 'bara mig',
@@ -495,6 +543,70 @@ const postChat = async (baseUrl, payload) => {
     assert.match(noPreferenceKeepsOfferFlow.reply, /Du behöver inte ha någon önskad operatör|operatören du har idag/i);
     assert.doesNotMatch(noPreferenceKeepsOfferFlow.reply, /Tele2 på alla|ni har idag/i);
     assert.deepEqual(noPreferenceKeepsOfferFlow.quickReplies, []);
+
+    const otherOperatorKeepsFlow = await postChat(baseUrl, {
+      message: 'andra, comviq',
+      language: 'sv',
+      messages: [
+        { role: 'user', content: 'bara mig' },
+        { role: 'assistant', content: onePersonPriceFlow.reply },
+      ],
+      qualification: onePersonPriceFlow.qualification,
+      cart: [],
+      page: {},
+    });
+    assert.equal(otherOperatorKeepsFlow.intent, 'mobile_offer');
+    assert.deepEqual(otherOperatorKeepsFlow.qualification.operators, ['Comviq']);
+    assert.deepEqual(otherOperatorKeepsFlow.qualification.missingFields, ['bindingEnds', 'mobileUsage', 'priceRange']);
+    assert.match(otherOperatorKeepsFlow.reply, /bindningstid/i);
+    assert.doesNotMatch(otherOperatorKeepsFlow.reply, /Vilken operatör har du idag|Vilken operatör ska vi utgå/i);
+
+    const comviqOperatorKeepsFlow = await postChat(baseUrl, {
+      message: 'comviq',
+      language: 'sv',
+      messages: [
+        { role: 'user', content: 'bara mig' },
+        { role: 'assistant', content: onePersonPriceFlow.reply },
+      ],
+      qualification: onePersonPriceFlow.qualification,
+      cart: [],
+      page: {},
+    });
+    assert.equal(comviqOperatorKeepsFlow.intent, 'mobile_offer');
+    assert.deepEqual(comviqOperatorKeepsFlow.qualification.operators, ['Comviq']);
+    assert.match(comviqOperatorKeepsFlow.reply, /bindningstid/i);
+
+    const otherOperatorFallback = await postChat(baseUrl, {
+      message: 'andra',
+      language: 'sv',
+      messages: [
+        { role: 'user', content: 'bara mig' },
+        { role: 'assistant', content: onePersonPriceFlow.reply },
+      ],
+      qualification: onePersonPriceFlow.qualification,
+      cart: [],
+      page: {},
+    });
+    assert.equal(otherOperatorFallback.intent, 'mobile_offer');
+    assert.deepEqual(otherOperatorFallback.qualification.operators, ['Annan / ingen']);
+    assert.match(otherOperatorFallback.reply, /bindningstid/i);
+
+    const noBindingKeepsFlow = await postChat(baseUrl, {
+      message: 'ingen',
+      language: 'sv',
+      messages: [
+        { role: 'user', content: 'andra, comviq' },
+        { role: 'assistant', content: otherOperatorKeepsFlow.reply },
+      ],
+      qualification: otherOperatorKeepsFlow.qualification,
+      cart: [],
+      page: {},
+    });
+    assert.equal(noBindingKeepsFlow.intent, 'mobile_offer');
+    assert.deepEqual(noBindingKeepsFlow.qualification.bindingEnds, ['Ingen bindningstid']);
+    assert.deepEqual(noBindingKeepsFlow.qualification.missingFields, ['mobileUsage', 'priceRange']);
+    assert.match(noBindingKeepsFlow.reply, /Hur använder du mobilen|wifi|streaming|Max surf/i);
+    assert.doesNotMatch(noBindingKeepsFlow.reply, /bindningstid.*kvar/i);
 
     const vagueHelpAfterOffer = await postChat(baseUrl, {
       message: 'jag vill ha hjälp',
@@ -752,7 +864,9 @@ const postChat = async (baseUrl, payload) => {
   assert.match(frontendScript, /sendMessage\('Jämför täckning mellan operatörer'\)/);
   assert.match(frontendScript, /const renderEmbeddedWidget = \(messageItem, embeddedWidget\)/);
   assert.match(frontendScript, /renderEmbeddedWidget\(assistantItem, response\.embeddedWidget\)/);
-  assert.match(frontendScript, /Hej! Jag kan hjälpa dig jämföra mobilabonnemang, bredband, täckning och presentkort\. Vad vill du börja med\?/);
+  assert.match(frontendScript, /const loadInitialGreeting = async \(\) =>/);
+  assert.match(frontendScript, /message: chatLanguage === 'en' \? 'hello' : 'hej'/);
+  assert.match(frontendScript, /loadInitialGreeting\(\);/);
   assert.doesNotMatch(frontendScript, /abonnemang, bredband, täckning, presentkort och din varukorg/);
   assert.match(frontendStyles, /\.dealett-chat-embedded-widget/);
   assert.match(frontendStyles, /\.dealett-chat-address-row/);

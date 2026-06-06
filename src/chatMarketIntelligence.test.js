@@ -1,6 +1,8 @@
 const assert = require('node:assert/strict');
 const net = require('node:net');
 
+process.env.DEALETT_CHAT_FORCE_FALLBACK = '1';
+
 const { createServer } = require('../server');
 
 const HOST = '127.0.0.1';
