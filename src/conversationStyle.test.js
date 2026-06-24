@@ -42,4 +42,11 @@ const preserved = detectConversationStyle({
 assert.equal(preserved.style, 'direct_answer');
 assert.match(preserved.reasons.join(' '), /preserved_previous_style/);
 
+const equipmentDispute = detectConversationStyle({
+  message: 'Hur bestrider jag en avgift för utrustning som redan är betald hos Tre?',
+  history: [],
+  context: {},
+});
+assert.notEqual(equipmentDispute.style, 'skeptical');
+
 console.log('conversation style tests passed');

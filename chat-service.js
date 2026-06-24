@@ -719,7 +719,7 @@ const hasFakeConditionSignal = (message) => (
 );
 
 const hasTrustSignal = (message) => (
-  /oberoende|partisk|partiska|lita på|lita pa|får ni betalt|far ni betalt|varför får ni betalt|varfor far ni betalt|betalar er|provision|ersättning|ersattning|biased|trust|paid/i
+  /oberoende|partisk|partiska|lita på|lita pa|får ni betalt|far ni betalt|varför får ni betalt|varfor far ni betalt|betalar er|provision|ersättning|ersattning|biased|can i trust|do i trust|trust you|trusted|are you paid|get paid|paid by/i
     .test(String(message || ''))
 );
 
@@ -783,6 +783,149 @@ const hasCapabilityQuestion = (message) => (
   /vad kan du( göra| gora)?|vad gör du|vad gor du|hur kan du hjälpa|hur kan du hjalpa|vad kan jag fråga|what can you do|how can you help/i
     .test(String(message || ''))
 );
+
+const OPERATOR_SELF_SERVICE = {
+  tre: 'Mitt3 eller Tre-appen',
+  telia: 'Mina sidor eller Telia-appen',
+  tele2: 'Mitt Tele2 eller Tele2-appen',
+  telenor: 'Mitt Telenor eller Telenor-appen',
+};
+
+const getMockSupportOperator = ({ message, appContext = {} }) => {
+  const explicitOperator = String(
+    appContext.operator ||
+    appContext.operatorName ||
+    appContext.selectedOperator ||
+    appContext.provider ||
+    ''
+  ).trim();
+  const source = `${message || ''} ${explicitOperator}`.toLowerCase();
+  if (/\btele\s*2\b|\btele2\b/.test(source)) return 'Tele2';
+  if (/\btelia\b/.test(source)) return 'Telia';
+  if (/\btelenor\b/.test(source)) return 'Telenor';
+  if (/\btre\b|\bmitt3\b|\b3extra\b/.test(source)) return 'Tre';
+  return explicitOperator || null;
+};
+
+const hasSupportActionRequest = (message) => (
+  /kan du (fixa|göra|gora|ändra|andra|säga upp|saga upp|avsluta|beställa|bestalla|aktivera|starta)|fixa det|gör det|gor det|starta ett ärende|starta ett arende|göra ändringen|gora andringen|åt mig|at mig/i
+    .test(String(message || ''))
+);
+
+const hasRecentSupportContext = (messages = []) => (
+  Array.isArray(messages) &&
+  messages
+    .slice(-6)
+    .some((item) => /faktura|betal|abonnemang|support|kundservice|konto|sim|esim|puk|pin|roaming|bredband|router|tv|kanal|röstbrevlåda|rostbrevlada|täckning|tackning|drift|felanmäl|felanmal|säkerhet|sakerhet|spärr|sparr/i.test(String(item?.content || '')))
+);
+
+const getOperatorSupportTopic = (message) => {
+  const text = String(message || '').toLowerCase();
+  if (/tv\b|tv-|tv\s|kanal|streaming|play|tv-box|tvbox|tv hub|tv-hub|hubb/i.test(text)) return 'tv_streaming';
+  if (/röstbrevlåda|rostbrevlada|voicemail/i.test(text)) return 'voicemail';
+  if (/publik ip|öppna portar|oppna portar|port.?forward|hemmaserver|dns|nat-typ|nat typ/i.test(text)) return 'advanced_network';
+  if (/roaming|dataroaming|utomlands|utland|eu|utlandssamtal/i.test(text)) return 'roaming';
+  if (/e-post|epost|webmail|mailkonto|mailen/i.test(text)) return 'email';
+  if (/smartklock|smart watch|apple watch|galaxy watch|extra sim|extra-sim|extra användare|extra anvandare/i.test(text)) return 'addon';
+  if (/reparation|försäkring|forsakring|skada|skärm|skarm|servicepartner|verkstad|trasig/i.test(text)) return 'device_repair';
+  if (/beloppsgräns|beloppsgrans|spärr|sparr|bedrägeri|bedrageri|säkerhet|sakerhet|id-kapning|id kapning/i.test(text)) return 'security';
+  if (/autogiro|\be-faktura\b|\befaktura\b|betal|förfall|forfall|nekades|påminnelse|paminnelse|inkasso|kredit|kvitto|swish|kortbetal|avgift|återbetal|aterbetal|bestrid/i.test(text)) return 'payment';
+  if (/faktura|räkning|rakning|debiter|moms|företagsfaktura|foretagsfaktura|specificer/i.test(text)) return 'invoice';
+  if (/beställ|bestall|order|spåra|spara min best|leverans|leverera|simkort|sim-kort|esim|e-sim|aktivera|puk|pin-kod|pinkod/i.test(text)) return 'order_sim';
+  if (/ändra|andra|avsluta|säga upp|saga upp|uppsäg|uppsag|överlåt|overlat|abonnemangsägare|abonnemangsagare|fullmakt|dödsbo|dodsbo|byta abonnemang|nummerflytt|flytta.*nummer|flyttar.*nummer|pausa/i.test(text)) return 'subscription';
+  if (/logga in|inlogg|konto|mina sidor|mitt tele2|mitt telenor|mitt3|telia-appen|tele2-appen|telenor-appen|tre-appen|bankid|bank-id|lösenord|losenord|behörighet|behorighet|inte abonnemangsägare|inte abonnemangsagare/i.test(text)) return 'account';
+  if (/surf|dataförbruk|dataforbruk|förbrukning|forbrukning|saldo|hur mycket data|extra data|köpa data|kopa data/i.test(text)) return 'usage';
+  if (/roaming|utomlands|utland|eu|sms|samtal|mms|wifi-samtal|vo[l]?te|telefoni/i.test(text)) return 'network';
+  if (/täckning|tackning|drift|störning|storning|nät|nat|internet.*funk|hastighet|långsam|langsam|signal/i.test(text)) return 'network';
+  if (/bredband|fiber|router|wifi|wi-fi|tv-kanal|tv kanal|iptv/i.test(text)) return 'broadband_operator';
+  if (/företag|foretag|företags|foretags|organisationsnummer/i.test(text)) return 'business';
+  if (/vilka .*abonnemang|vad .*abonnemang|erbjuder|prislista|student|senior|familj.*abonnemang|mobilabonnemang|extra användare|extra anvandare|uppkoppling/i.test(text)) return 'products';
+  if (/kundservice|support|kontakt|chatta|ringa|mejla|maila/i.test(text)) return 'contact';
+  return null;
+};
+
+const hasOperatorSupportQuestionShape = (message) => (
+  /(^|\s)(hur|var|vart|vad|varför|varfor|när|nar|vilka|kan jag|går det|gar det|behöver jag|behover jag|why|how|where|what|when|can i)\b|\?/.test(String(message || '').toLowerCase())
+);
+
+const shouldUseMockOperatorSupport = ({ message, messages = [], appContext = {}, intent = null }) => {
+  if (['dealett_trust', 'fake_condition', 'capabilities', 'identity', 'small_talk', 'outside_scope'].includes(intent)) return false;
+  const topic = getOperatorSupportTopic(message);
+  const actionRequest = hasSupportActionRequest(message) && hasRecentSupportContext(messages);
+  if (!topic && !actionRequest) return false;
+  const text = String(message || '').toLowerCase();
+  const operator = getMockSupportOperator({ message, appContext });
+  const questionLike = hasOperatorSupportQuestionShape(message);
+  const problemLike = /fel|fungerar inte|funkar inte|kan inte|saknas|nekad|nekades|inte fått|inte fatt|stoppad|spärr|sparr|tappat|förlorat|forlorat|problem/i.test(text);
+  if (!questionLike && !problemLike && !actionRequest) return false;
+  if (!operator && ['network', 'broadband_operator', 'products', 'tv_streaming', 'advanced_network'].includes(topic)) return false;
+  const hasOfferIntent = /billigare|billigast|bästa|basta|jämför|jamfor|rekommendera|erbjudande|presentkort|dealett|switch|compare|recommend|gift card/i.test(text);
+  const isAdminTopic = ['payment', 'invoice', 'order_sim', 'subscription', 'account', 'usage', 'network', 'broadband_operator', 'business', 'contact'].includes(topic);
+  if (hasOfferIntent && !isAdminTopic && ['mobile_offer', 'family_offer', 'cheapest_start'].includes(intent)) return false;
+  return Boolean(operator || questionLike || problemLike);
+};
+
+const buildMockOperatorSupportReply = ({ message, messages = [], language = 'sv', appContext = {}, intent = null }) => {
+  if (!shouldUseMockOperatorSupport({ message, messages, appContext, intent })) return null;
+
+  const isEnglish = language === 'en';
+  const operator = getMockSupportOperator({ message, appContext });
+  const operatorLabel = operator || (isEnglish ? 'your operator' : 'din operatör');
+  const selfService = operator ? OPERATOR_SELF_SERVICE[operator.toLowerCase()] || `${operator}s app eller Mina sidor` : (isEnglish ? 'the operator app or My pages' : 'operatörens app eller Mina sidor');
+  const topic = getOperatorSupportTopic(message) || (hasSupportActionRequest(message) ? 'action_boundary' : null);
+
+  if (isEnglish) {
+    const opening = `As ${operatorLabel} would normally answer:`;
+    const replies = {
+      action_boundary: `${opening} I cannot make account changes, cancel subscriptions, activate services, take payments or create a real support case from this chat. I can guide you, but the safe next step is ${selfService} or authenticated ${operatorLabel} support for anything that changes the account.`,
+      payment: `${opening} manage direct debit, e-invoice and payment status in ${selfService}. If a payment was rejected or is missing, check the bank account first and then contact ${operatorLabel} support so they can see the account-specific status.`,
+      invoice: `${opening} open the invoice in ${selfService} and compare subscription fees, add-ons, usage, discounts and one-time charges. If a charge looks wrong, contact ${operatorLabel} support because they need authenticated account access.`,
+      order_sim: `${opening} track orders, SIM/eSIM status and activation in ${selfService} or from the order confirmation. If the SIM, eSIM or delivery is missing, contact ${operatorLabel} support with the order number.`,
+      subscription: `${opening} changes, cancellations, transfers and ownership questions usually require login and identity verification in ${selfService} or authenticated support. Do not send personal identity details in chat.`,
+      account: `${opening} log in to ${selfService} to see subscriptions, permissions, invoices and usage. The subscription owner controls sensitive changes; support can help with identity or power-of-attorney questions.`,
+      usage: `${opening} check used data, remaining data and add-ons in ${selfService}. If the usage does not match what you expect, compare it with the invoice and ask support to review the account.`,
+      network: `${opening} first check operating-status and coverage information, restart the device/router and test another location if possible. If the problem remains, report it to ${operatorLabel} support with address, device and time of issue.`,
+      roaming: `${opening} check roaming is enabled in the phone and in ${selfService}, then restart the phone and manually choose a local network if needed. Contact ${operatorLabel} support if roaming is blocked on the account or charges look wrong.`,
+      broadband_operator: `${opening} restart the router, check operating status and then review broadband/router settings in ${selfService}. For address-specific fiber or broadband faults, ${operatorLabel} support must troubleshoot the line.`,
+      tv_streaming: `${opening} restart the TV box or app, check operating status and verify channel/package access in ${selfService}. If channels are missing or the box shows an error code, contact ${operatorLabel} support with the error code and equipment model.`,
+      voicemail: `${opening} voicemail codes and settings normally sit in ${selfService}, the phone settings or authenticated support. If the code is missing or locked, ${operatorLabel} support must verify the subscriber before resetting it.`,
+      advanced_network: `${opening} public IP, port opening and advanced router settings depend on the broadband/mobile broadband service and router. Check available add-ons/settings in ${selfService}; if the option is missing, ${operatorLabel} support needs to confirm whether it is supported for the subscription.`,
+      device_repair: `${opening} start with warranty/insurance status and repair options in ${selfService}. For damage, service or insurance claims, use the official repair or insurance flow and avoid sending sensitive identity details in chat.`,
+      security: `${opening} for spending limits, blocks, suspected fraud or security issues, use ${selfService} if available and contact authenticated ${operatorLabel} support quickly. Do not share passwords, BankID codes or card details in chat.`,
+      email: `${opening} check email/webmail settings, password reset and service status in ${selfService}. If the mailbox is locked or missing, authenticated ${operatorLabel} support needs to verify the account.`,
+      addon: `${opening} add-ons such as extra SIM, smartwatch services or extra users are managed in ${selfService}. If provisioning does not work, contact ${operatorLabel} support so they can check the subscription and activation status.`,
+      business: `${opening} company accounts normally use the business portal or authenticated business support, especially for invoices, authorizations and power of attorney.`,
+      products: `${opening} current mobile plans and campaigns can change, so check ${operatorLabel}'s plan page or app for the live assortment. Dealett can still compare total value if you want an independent comparison.`,
+      contact: `${opening} use ${selfService} first for self-service. If the issue needs account access, contact authenticated ${operatorLabel} support by the official support channel.`,
+    };
+    return replies[topic] || `${opening} start in ${selfService}. If the case needs account data, contact authenticated ${operatorLabel} support.`;
+  }
+
+  const opening = `Som ${operatorLabel} normalt skulle svara:`;
+  const replies = {
+    action_boundary: `${opening} jag kan inte göra kontoändringar, säga upp abonnemang, aktivera tjänster, ta betalt eller starta ett riktigt supportärende från chatten. Jag kan guida dig, men säkra nästa steget är ${selfService} eller autentiserad ${operatorLabel}-kundservice när något ska ändras på kontot.`,
+    payment: `${opening} hantera autogiro, e-faktura och betalstatus i ${selfService}. Om en betalning har nekats eller saknas bör du först kontrollera banken och sedan kontakta ${operatorLabel}s kundservice så att de kan se status på kontot.`,
+    invoice: `${opening} öppna fakturan i ${selfService} och jämför abonnemangsavgifter, tillval, förbrukning, rabatter och engångskostnader. Om en debitering verkar fel behöver ${operatorLabel}s kundservice kontrollera kontot efter inloggning.`,
+    order_sim: `${opening} spåra beställning, SIM/eSIM och aktivering i ${selfService} eller via orderbekräftelsen. Om SIM, eSIM eller leverans saknas bör du kontakta ${operatorLabel}s kundservice med ordernummer.`,
+    subscription: `${opening} ändring, uppsägning, överlåtelse och frågor om abonnemangsägare kräver normalt inloggning och identifiering i ${selfService} eller hos autentiserad kundservice. Skicka inte personnummer i chatten.`,
+    account: `${opening} logga in i ${selfService} för att se abonnemang, behörigheter, fakturor och förbrukning. Abonnemangsägaren styr känsliga ändringar; kundservice kan hjälpa vid fullmakt eller identitetskontroll.`,
+    usage: `${opening} kontrollera använd surf, kvarvarande surf och tillval i ${selfService}. Om förbrukningen inte stämmer med din bild bör du jämföra med fakturan och be kundservice granska kontot.`,
+    network: `${opening} börja med att kontrollera driftinformation och täckning, starta om mobil/router och testa en annan plats om möjligt. Om felet kvarstår bör du felanmäla till ${operatorLabel}s kundservice med adress, enhet och tidpunkt.`,
+    roaming: `${opening} kontrollera att roaming är påslaget i mobilen och i ${selfService}, starta om mobilen och välj nät manuellt om det behövs. Kontakta ${operatorLabel}s kundservice om roaming är spärrat på kontot eller om debiteringen verkar fel.`,
+    broadband_operator: `${opening} starta om routern, kontrollera driftstatus och gå igenom bredbands- eller routerinställningar i ${selfService}. För adressbundna fiber- eller bredbandsfel behöver ${operatorLabel}s support felsöka linjen.`,
+    tv_streaming: `${opening} starta om tv-boxen eller appen, kontrollera driftstatus och se att kanalpaket/behörighet finns i ${selfService}. Om kanaler saknas eller tv-boxen visar felkod bör du kontakta ${operatorLabel}s kundservice med felkod och modell.`,
+    voicemail: `${opening} kod och inställningar för röstbrevlådan hanteras normalt i ${selfService}, telefonens inställningar eller via autentiserad kundservice. Om koden saknas eller är låst behöver ${operatorLabel}s support verifiera abonnenten innan återställning.`,
+    advanced_network: `${opening} publik IP, portöppning och avancerade routerinställningar beror på bredbands- eller mobilt bredbandstjänsten och routern. Kontrollera tillval/inställningar i ${selfService}; om valet saknas behöver ${operatorLabel}s support bekräfta om abonnemanget stödjer det.`,
+    device_repair: `${opening} börja med garanti, försäkring och reparationsflöde i ${selfService}. Vid skada, service eller försäkringsärende ska du använda den officiella reparations- eller försäkringsvägen och inte skriva känsliga id-uppgifter i chatten.`,
+    security: `${opening} för beloppsgränser, spärrar, misstänkt bedrägeri eller säkerhetsärenden bör du använda ${selfService} om det går och snabbt kontakta autentiserad ${operatorLabel}-kundservice. Dela inte lösenord, BankID-koder eller kortuppgifter i chatten.`,
+    email: `${opening} kontrollera e-post/webmail-inställningar, lösenordsåterställning och driftstatus i ${selfService}. Om brevlådan är låst eller saknas behöver autentiserad ${operatorLabel}-support verifiera kontot.`,
+    addon: `${opening} tillägg som extra SIM, smartklocka eller extra användare hanteras i ${selfService}. Om aktivering eller delning inte fungerar behöver ${operatorLabel}s kundservice kontrollera abonnemanget och aktiveringsstatus.`,
+    business: `${opening} företagsärenden hanteras normalt i företagsportalen eller via autentiserad företagssupport, särskilt fakturor, behörigheter och fullmakter.`,
+    products: `${opening} aktuella mobilabonnemang och kampanjer kan ändras, så kontrollera ${operatorLabel}s abonnemangssida eller app för live-utbudet. Dealett kan fortfarande jämföra totalvärdet om du vill ha en oberoende jämförelse.`,
+    contact: `${opening} använd ${selfService} först för självservice. Om ärendet kräver kontodata behöver du kontakta autentiserad ${operatorLabel}-kundservice via deras officiella supportkanal.`,
+  };
+  return replies[topic] || `${opening} börja i ${selfService}. Om ärendet kräver kontodata behöver autentiserad ${operatorLabel}-kundservice hjälpa dig.`;
+};
 
 const hasIdentityQuestion = (message) => (
   /vem är du|vem ar du|who are you|är du en människa|ar du en manniska|är du människa|ar du manniska|du människa|du manniska|människa$|manniska$|är du ai|ar du ai|är du robot|ar du robot|chatbot|bot/i
@@ -876,7 +1019,7 @@ const normalizeContextualMessage = (message, messages = []) => {
   return latest;
 };
 
-const detectIntent = ({ message, messages = [], page = {}, qualification = {}, conversationStyle = null }) => {
+const detectIntent = ({ message, messages = [], page = {}, qualification = {}, conversationStyle = null, appContext = {} }) => {
   const text = normalizeCommonTypos(message).toLowerCase();
   const pagePath = String(page?.path || '');
   const recentUserConversation = trimMessages(messages)
@@ -912,6 +1055,7 @@ const detectIntent = ({ message, messages = [], page = {}, qualification = {}, c
   if (hasIdentityQuestion(text)) return 'identity';
   if (isGreetingOnly(text)) return 'greeting';
   if (hasSmallTalkQuestion(text) && !hasDealettTopic(text)) return 'small_talk';
+  if (shouldUseMockOperatorSupport({ message: text, messages, appContext, intent: 'support' })) return 'support';
   if (coverageContextActive && hasDirectAnswerSignal(text)) return 'coverage';
   if (broadbandContextActive && isLowInformationAcknowledgement(text)) return 'broadband';
   if (
@@ -1639,7 +1783,7 @@ const buildDirectCoverageReply = ({ isEnglish, message, messages = [] }) => {
     : 'Om jag ska svara kort: börja med Telias nät för bästa chans till täckning, men kontrollera adressen eftersom inomhusmiljö kan skilja mycket.';
 };
 
-const fallbackReply = ({ intent, language, message, messages = [], qualification, toolResult, conversationStyle }) => {
+const fallbackReply = ({ intent, language, message, messages = [], qualification, toolResult, conversationStyle, appContext = {} }) => {
   const isEnglish = language === 'en';
   if (intent === 'greeting') {
     return isEnglish
@@ -1676,6 +1820,14 @@ const fallbackReply = ({ intent, language, message, messages = [], qualification
       ? 'I cannot pretend or calculate from fake conditions. Dealett can only compare using the actual operator terms, price, data need and remaining contract time.'
       : 'Jag kan inte låtsas eller räkna på fejkade villkor. Dealett kan bara jämföra med riktiga operatörsvillkor, pris, surfbehov och faktisk bindningstid.';
   }
+  const mockOperatorSupportReply = buildMockOperatorSupportReply({
+    message,
+    messages,
+    language,
+    appContext,
+    intent,
+  });
+  if (mockOperatorSupportReply) return mockOperatorSupportReply;
   if (intent === 'style_guided') {
     return buildStyleGuidedReply({ isEnglish, message, conversationStyle });
   }
@@ -2374,6 +2526,11 @@ const polishReplyForConversation = ({ reply, message, messages = [], language, i
 };
 
 const generateReply = async (context) => {
+  const mockOperatorSupportReply = buildMockOperatorSupportReply(context);
+  if (mockOperatorSupportReply) {
+    return { reply: mockOperatorSupportReply, generated: false };
+  }
+
   const apiKey = process.env.OPENAI_API_KEY;
   if (process.env.DEALETT_CHAT_FORCE_FALLBACK === '1') {
     return { reply: fallbackReply(context), generated: false };
@@ -2447,6 +2604,7 @@ const createChatCompletion = async ({
     page,
     qualification: nextQualification,
     conversationStyle: nextConversationStyle,
+    appContext: context,
   });
   const initialToolResult = buildToolResult({
     intent,
@@ -2488,6 +2646,7 @@ const createChatCompletion = async ({
     toolResult,
     facts,
     conversationStyle: nextConversationStyle,
+    appContext: context,
   });
   const reply = polishReplyForConversation({
     reply: rawReply.reply,

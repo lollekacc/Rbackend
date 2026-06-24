@@ -102,7 +102,7 @@ const STYLE_PATTERNS = {
   ],
   skeptical: [
     /får ni betalt|far ni betalt|oberoende|partisk|lita på|lita pa/i,
-    /vill bara sälja|vill bara salja|är detta reklam|ar detta reklam|biased|trust|paid/i,
+    /vill bara sälja|vill bara salja|är detta reklam|ar detta reklam|biased|can i trust|do i trust|trust you|trusted|are you paid|get paid|paid by/i,
     /bara.*sälj|bara.*salj|så ni kan sälja|sa ni kan salja|reklam.*sälj|reklam.*salj/i,
   ],
   browsing: [
